@@ -475,9 +475,18 @@ const DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
   {
     id: 'mkfs.device',
     category: 'Filesystem',
-    label: 'mkfs device format',
-    description: 'Blocks mkfs formatting a /dev device.',
+    label: 'Filesystem format on a device',
+    description: 'Blocks mkfs, mke2fs, and newfs formatting a /dev device.',
     example: 'mkfs.ext4 /dev/sda1',
+    intent: 'manual_only',
+  },
+  {
+    id: 'disk.erase',
+    category: 'Filesystem',
+    label: 'Disk erase or repartition',
+    description:
+      'Blocks diskutil erase and partition verbs, wipefs -a/-o, sgdisk writes, and parted label or partition edits on a /dev device.',
+    example: 'diskutil eraseDisk APFS Untitled disk4',
     intent: 'manual_only',
   },
   {

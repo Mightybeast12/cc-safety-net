@@ -337,6 +337,18 @@ describe('heredoc files', () => {
 
 describe('device commands', () => {
   test('a write to a /dev target is reported per tool', () => {
+    const formatsDevice: DestructiveCommandRuleMatch = {
+      id: 'mkfs.device',
+      reason:
+        'mkfs formatting a /dev device erases everything on it. Run the format manually after confirming the target.',
+      intent: 'manual_only',
+    };
+    const erasesDisk: DestructiveCommandRuleMatch = {
+      id: 'disk.erase',
+      reason:
+        'This erases or repartitions a disk. Run disk erase and partition commands manually after confirming the target.',
+      intent: 'manual_only',
+    };
     const rows: readonly {
       readonly argv: readonly string[];
       readonly match: DestructiveCommandRuleMatch | null;
@@ -373,6 +385,54 @@ describe('device commands', () => {
       },
       { argv: ['mkfs.ext4', 'image.img'], match: null },
       { argv: ['mkfsx', '/dev/sda1'], match: null },
+      ...[
+        ['newfs_hfs', '/dev/disk2s1'],
+        ['newfs_msdos', '/dev/disk3'],
+        ['newfs', '/dev/rdisk3'],
+        ['mke2fs', '-t', 'ext4', '/dev/sde'],
+      ].map((argv) => ({ argv, match: formatsDevice })),
+      { argv: ['mke2fs', 'disk.img'], match: null },
+      { argv: ['newfs_hfs', 'disk.img'], match: null },
+      { argv: ['newfsx', '/dev/disk3'], match: null },
+      ...[
+        ['diskutil', 'eraseDisk', 'JHFS+', 'Kiwi', '/dev/disk4'],
+        ['diskutil', 'eraseVolume', 'apfs', 'KiwiLV', '/dev/disk5s2'],
+        ['diskutil', 'reformat', '/dev/disk6'],
+        ['diskutil', 'partitionDisk', '/dev/disk7', '2', 'MBR', 'fat32', 'A', 'fat32', 'B'],
+        ['diskutil', 'zeroDisk', '/dev/disk8'],
+        ['diskutil', 'randomDisk', '3', '/dev/disk9'],
+        ['diskutil', 'secureErase', '1', '/dev/disk10'],
+        ['diskutil', 'erasedisk', 'APFS', 'X', 'disk4'],
+        ['diskutil', 'ERASEVOLUME', 'HFS+', 'RAMDisk', 'disk11'],
+        ['wipefs', '-a', '/dev/sdb'],
+        ['wipefs', '--all', '/dev/sdb'],
+        ['wipefs', '-af', '/dev/sdb'],
+        ['wipefs', '-o', '0x438', '/dev/sdb'],
+        ['wipefs', '--offset=0x438', '/dev/sdb'],
+        ['sgdisk', '-Z', '/dev/sdc'],
+        ['sgdisk', '--zap-all', '/dev/sdd'],
+        ['sgdisk', '-n', '1:0:0', '/dev/sdd'],
+        ['sgdisk', '--new=1:0:0', '/dev/sdd'],
+        ['parted', '/dev/sde', 'mklabel', 'gpt'],
+        ['parted', '-s', '/dev/sdf', 'rm', '3'],
+        ['parted', '/dev/sdf', 'MKPART', 'primary', '0%', '100%'],
+        ['parted', '/dev/sdf', 'mktable', 'msdos'],
+        ['parted', '/dev/sdf', 'resizepart', '2', '100%'],
+      ].map((argv) => ({ argv, match: erasesDisk })),
+      ...[
+        ['diskutil', 'list'],
+        ['diskutil', 'info', 'disk4'],
+        ['diskutil'],
+        ['wipefs', '/dev/sdb'],
+        ['wipefs', '-a', 'disk.img'],
+        ['sgdisk', '-p', '/dev/sda'],
+        ['sgdisk', '--print', '-v', '/dev/sda'],
+        ['sgdisk', '--backup=table.bak', '/dev/sda'],
+        ['sgdisk', '-Z', 'disk.img'],
+        ['parted', '/dev/sda', 'print'],
+        ['parted', '-l'],
+        ['parted', 'disk.img', 'mklabel', 'gpt'],
+      ].map((argv) => ({ argv, match: null })),
       {
         argv: ['shred', 'secret'],
         match: {

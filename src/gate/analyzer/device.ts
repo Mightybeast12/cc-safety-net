@@ -55,6 +55,8 @@ const SGDISK_READ_ONLY_OPTIONS = new Set([
   '--help',
   '--usage',
 ]);
+const SGDISK_READ_ONLY_FLAGS = new Set(['p', 'v', 'O', 'E', 'F', 'f', 'D', 'L', 'P', 'V', '?']);
+const SGDISK_READ_ONLY_VALUE_OPTIONS = new Set(['i', 'b']);
 const BLOCK_DEVICE_PATH =
   /^\/dev\/(?:r?disk\d|sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme\d|mmcblk\d|md\d|dm-\d|loop\d|mapper\/|disk\/)/;
 const DEVICE_WRITING_REDIRECTIONS = new Set(['>', '>|', '>>', '<>', '>&']);
@@ -81,16 +83,23 @@ function erasesDisk(head: string, operands: readonly string[]): boolean {
   if (head === 'sgdisk') {
     return (
       namesDevice &&
-      operands.some(
-        (token) =>
-          token.startsWith('-') && !SGDISK_READ_ONLY_OPTIONS.has(token.split('=', 1)[0] ?? token),
-      )
+      operands.some((token) => token.startsWith('-') && !isSgdiskReadOnlyOption(token))
     );
   }
   return (
     head === 'parted' &&
     namesDevice &&
     operands.some((token) => PARTED_TABLE_EDITS.has(token.toLowerCase()))
+  );
+}
+
+function isSgdiskReadOnlyOption(token: string): boolean {
+  if (SGDISK_READ_ONLY_OPTIONS.has(token.split('=', 1)[0] ?? token)) return true;
+  if (token.startsWith('--')) return false;
+  const letters = token.slice(1).split('');
+  return (
+    SGDISK_READ_ONLY_VALUE_OPTIONS.has(letters[0] ?? '') ||
+    letters.every((letter) => SGDISK_READ_ONLY_FLAGS.has(letter))
   );
 }
 

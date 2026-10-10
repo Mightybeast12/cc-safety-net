@@ -1522,6 +1522,34 @@ export function behavioralContractCases(paths: {
       options: options({ cwd: paths.cwd }),
       expected: { kind: 'allow' as const },
     })),
+    ...[
+      'echo x > /dev/sda',
+      'cat img.raw > /dev/nvme0n1',
+      'sh -c "echo x > /dev/sda"',
+      'printf x >> /dev/disk4',
+      'echo x &> /dev/sdb',
+    ].map((command) => ({
+      name: `blocks an output redirect onto a disk device: ${command}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: {
+        kind: 'block' as const,
+        ruleId: 'redirect.block-device',
+        intent: 'manual_only' as const,
+        reasonIncludes: 'overwrites a disk device',
+      },
+    })),
+    ...[
+      'echo x > /dev/null',
+      'echo x > /dev/tty',
+      'echo x > /dev/cu.usbmodem1',
+      'cat < /dev/sda > disk.img',
+    ].map((command) => ({
+      name: `allows a redirect onto a non-disk /dev path or from a disk: ${command}`,
+      command,
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' as const },
+    })),
     {
       name: 'allows awk running a literal command',
       command: `awk 'BEGIN { system("ls") }'`,

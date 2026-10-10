@@ -498,6 +498,14 @@ const DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     intent: 'use_alternative',
   },
   {
+    id: 'redirect.block-device',
+    category: 'Filesystem',
+    label: 'Redirect onto a disk device',
+    description: 'Blocks output redirects whose literal target is a disk device path under /dev.',
+    example: 'cat disk.img > /dev/sda',
+    intent: 'manual_only',
+  },
+  {
     id: 'interpreter.dangerous-command',
     category: 'Execution',
     label: 'Interpreter dangerous command',

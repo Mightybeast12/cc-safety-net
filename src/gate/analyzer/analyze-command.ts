@@ -33,6 +33,7 @@ import type { CommandTraceContext } from '@/gate/trace';
 import { analysisWordText, analyzedViewWords } from './command-words';
 import { dangerousInTextMatch } from './dangerous-text';
 import { isDataOnlyQuotedAssignment } from './deferred-assignment';
+import { analyzeDeviceRedirectionMatch } from './device';
 import { isPersistentHeredocFilePath, resolveTrackedHeredocPath } from './heredoc-files';
 import {
   containsDangerousCode,
@@ -735,6 +736,20 @@ function analyzeCommandView(
       reason: match?.reason,
     });
     if (match) return resultFromCommandMatch(segmentStr, match);
+  }
+
+  const redirectMatch = filterDestructiveCommandMatch(
+    analyzeDeviceRedirectionMatch(commandView.redirections),
+    options.policy,
+  );
+  if (redirectMatch) {
+    options.trace?.recordSegment({
+      type: 'rule-check',
+      rule: 'analyzer/device.ts:analyzeDeviceRedirectionMatch',
+      matched: true,
+      reason: redirectMatch.reason,
+    });
+    return resultFromCommandMatch(segmentStr, redirectMatch);
   }
 
   if (

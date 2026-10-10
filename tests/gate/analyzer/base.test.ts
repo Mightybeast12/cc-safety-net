@@ -363,6 +363,18 @@ describe('device commands', () => {
         },
       },
       { argv: ['dd', 'if=/dev/zero', 'of=/tmp/x'], match: null },
+      { argv: ['dd', 'if=big.bin', 'of=/dev/null'], match: null },
+      { argv: ['dd', 'if=big.bin', 'of=/dev/zero'], match: null },
+      { argv: ['dd', 'if=big.bin', 'of=/dev/full'], match: null },
+      {
+        argv: ['dd', 'if=big.bin', 'of=/dev/nullx'],
+        match: {
+          id: 'dd.device-write',
+          reason:
+            'dd writing to a /dev device can destroy a disk or partition. Run device writes manually after confirming the target.',
+          intent: 'manual_only',
+        },
+      },
       { argv: ['dd', 'of=/dev/'], match: null },
       { argv: ['dd'], match: null },
       {

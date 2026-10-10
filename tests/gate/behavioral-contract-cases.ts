@@ -1446,6 +1446,12 @@ export function behavioralContractCases(paths: {
       expected: { kind: 'allow' },
     },
     {
+      name: 'allows dd writing to the null sink',
+      command: 'dd if=big.bin of=/dev/null bs=1M',
+      options: options({ cwd: paths.cwd }),
+      expected: { kind: 'allow' },
+    },
+    {
       name: 'blocks dd writing to a device',
       command: 'dd if=/dev/zero of=/dev/sda bs=1M',
       options: options({ cwd: paths.cwd }),

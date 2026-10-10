@@ -13,6 +13,7 @@ const REASON_REDIRECT_BLOCK_DEVICE =
 const REASON_SHRED_TARGET =
   'shred permanently destroys the given target. Use rm for ordinary deletes, or run shred manually.';
 
+const DD_SINK_TARGETS = new Set(['of=/dev/null', 'of=/dev/zero', 'of=/dev/full']);
 const FILESYSTEM_FORMAT_HEAD = /^(?:mkfs(?:\..+)?|mke2fs|newfs(?:_.+)?)$/;
 const DISK_ERASE_HEADS = new Set(['diskutil', 'wipefs', 'sgdisk', 'parted']);
 const DISKUTIL_ERASE_VERBS = new Set([
@@ -90,7 +91,10 @@ export function analyzeDeviceCommandMatch(
   tokens: readonly string[],
 ): DestructiveCommandRuleMatch | null {
   const operands = tokens.slice(1);
-  if (head === 'dd' && operands.some((token) => /^of=\/dev\/.+/.test(token))) {
+  if (
+    head === 'dd' &&
+    operands.some((token) => /^of=\/dev\/.+/.test(token) && !DD_SINK_TARGETS.has(token))
+  ) {
     return destructiveCommandMatch('dd.device-write', REASON_DD_DEVICE_WRITE);
   }
   if (FILESYSTEM_FORMAT_HEAD.test(head) && operands.some((token) => token.startsWith('/dev/'))) {

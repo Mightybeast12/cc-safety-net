@@ -468,7 +468,8 @@ const DESTRUCTIVE_COMMAND_RULE_DEFINITIONS = [
     id: 'dd.device-write',
     category: 'Filesystem',
     label: 'dd device write',
-    description: 'Blocks dd writing to a /dev device.',
+    description:
+      'Blocks dd writing to a /dev device other than /dev/null, /dev/zero, or /dev/full.',
     example: 'dd if=/dev/zero of=/dev/sda',
     intent: 'manual_only',
   },

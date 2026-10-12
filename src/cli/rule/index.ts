@@ -386,7 +386,7 @@ function validateRuleListActionFlags(flags: RuleFlags, operand: string): void {
     flags.errors.push(`rule ${subcommand} ${action} requires ${operand}`);
     return;
   }
-  if (flags.positionals.length > 3) {
+  if (subcommand !== 'tool' && flags.positionals.length > 3) {
     flags.errors.push(`Unexpected rule ${subcommand} argument: ${flags.positionals[3]}`);
   }
 }
@@ -463,19 +463,25 @@ function printTransparentWrappers(wrappers: string[]): void {
 
 function runRuleToolCommand(environment: Environment, flags: RuleFlags, cwd: string): number {
   const action = flags.positionals[1];
-  const name = flags.positionals[2] ?? '';
+  const names = [...new Set(flags.positionals.slice(2))];
   if (action === 'list') return listCommandTools(environment, cwd);
 
-  if (!COMMAND_TOOL_NAME_PATTERN.test(name)) {
-    return refuseCommandTool(`"${name}" is not a tool name: ${COMMAND_TOOL_NAME_RULE}.`);
+  const refusals = [
+    ...names.flatMap((name) => {
+      if (!COMMAND_TOOL_NAME_PATTERN.test(name)) {
+        return [`"${name}" is not a tool name: ${COMMAND_TOOL_NAME_RULE}.`];
+      }
+      const builtInRefusal = action === 'add' ? getBuiltInToolRefusal(name) : undefined;
+      return builtInRefusal ? [builtInRefusal] : [];
+    }),
+    ...(flags.cwdArg !== undefined && !COMMAND_TOOL_NAME_PATTERN.test(flags.cwdArg)
+      ? [`"${flags.cwdArg}" is not an argument name: ${COMMAND_TOOL_NAME_RULE}.`]
+      : []),
+  ];
+  if (refusals.length > 0) {
+    for (const refusal of refusals) console.error(colors.red(`Error: ${refusal}`));
+    return 1;
   }
-  if (flags.cwdArg !== undefined && !COMMAND_TOOL_NAME_PATTERN.test(flags.cwdArg)) {
-    return refuseCommandTool(
-      `"${flags.cwdArg}" is not an argument name: ${COMMAND_TOOL_NAME_RULE}.`,
-    );
-  }
-  const builtInRefusal = action === 'add' ? getBuiltInToolRefusal(name) : undefined;
-  if (builtInRefusal) return refuseCommandTool(builtInRefusal);
 
   const scope = getScopePaths(environment, { global: !flags.project });
   const loaded = readScopeRulesConfig(scope.configTarget);
@@ -483,30 +489,26 @@ function runRuleToolCommand(environment: Environment, flags: RuleFlags, cwd: str
     for (const error of loaded.result.errors) console.error(error);
     return 1;
   }
-  const tools = loaded.config.command_tools ?? [];
-  const entry = flags.cwdArg === undefined ? name : { name, cwd: flags.cwdArg };
-  const isNamed = (tool: CommandToolEntry) =>
-    (typeof tool === 'string' ? tool : tool.name) === name;
-  const nextTools =
-    action === 'remove'
-      ? tools.filter((tool) => !isNamed(tool))
-      : tools.some(isNamed)
-        ? tools.map((tool) => (isNamed(tool) ? entry : tool))
-        : [...tools, entry];
+  const nextTools = names.reduce((tools, name) => {
+    const entry = flags.cwdArg === undefined ? name : { name, cwd: flags.cwdArg };
+    const isNamed = (tool: CommandToolEntry) =>
+      (typeof tool === 'string' ? tool : tool.name) === name;
+    if (action === 'remove') return tools.filter((tool) => !isNamed(tool));
+    return tools.some(isNamed)
+      ? tools.map((tool) => (isNamed(tool) ? entry : tool))
+      : [...tools, entry];
+  }, loaded.config.command_tools ?? []);
 
   writeJsonAtomic(scope.configTarget, { ...loaded.config, command_tools: nextTools });
-  console.log(
-    action === 'add'
-      ? `Added command tool: ${name}${flags.cwdArg === undefined ? '' : ` (cwd argument: ${flags.cwdArg})`}`
-      : `Removed command tool: ${name}`,
-  );
+  for (const name of names) {
+    console.log(
+      action === 'add'
+        ? `Added command tool: ${name}${flags.cwdArg === undefined ? '' : ` (cwd argument: ${flags.cwdArg})`}`
+        : `Removed command tool: ${name}`,
+    );
+  }
   console.log(`Scope: ${flags.project ? 'project' : 'user'} (${scope.configPath})`);
   return 0;
-}
-
-function refuseCommandTool(message: string): number {
-  console.error(colors.red(`Error: ${message}`));
-  return 1;
 }
 
 function listCommandTools(environment: Environment, cwd: string): number {

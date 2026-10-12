@@ -37,10 +37,10 @@ export const ruleCommand = {
     { usage: 'wrapper remove <command>', description: 'Remove a transparent command wrapper' },
     { usage: 'wrapper list', description: 'List transparent command wrappers' },
     {
-      usage: 'tool add <name> [--cwd-arg <name>] [--project]',
-      description: 'Analyze a community shell tool (user scope by default)',
+      usage: 'tool add <name...> [--cwd-arg <name>] [--project]',
+      description: 'Analyze community shell tools (user scope by default)',
     },
-    { usage: 'tool remove <name> [--project]', description: 'Stop analyzing a declared tool' },
+    { usage: 'tool remove <name...> [--project]', description: 'Stop analyzing declared tools' },
     { usage: 'tool list', description: 'List declared command tools in both scopes' },
     { usage: 'migrate [--cleanup]', description: 'Migrate legacy inline rules' },
     { usage: 'doc', description: 'Print the rulebook authoring guide' },

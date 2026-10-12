@@ -45,7 +45,7 @@ Legacy inline \`.safety-net.json\` and \`~/.cc-safety-net/config.json\` files ar
 - Use \`cc-safety-net rule wrapper add rtk\` to configure RTK without manually editing \`rule.json\`.
 - \`command_tools\`: Optional array of shell tools that a plugin adds to an agent and that CC Safety Net does not know. Each entry is a tool name such as \`"ops_bash"\`, or \`{ "name": "ops_run_background", "cwd": "cwd" }\` when the tool takes its working directory in a named argument (otherwise \`workdir\`, \`cwd\`, or \`working_directory\` is read). A call to a declared tool with a non-empty string \`command\` is analyzed like a built-in shell command. User and project lists merge; the user entry wins a name declared in both.
 - Built-in shell and file tools are already analyzed and cannot be declared; \`rule verify\` reports one declared by hand.
-- Use \`cc-safety-net rule tool add ops_bash\` to declare a tool in the user config, or add \`--project\` for the project config.
+- Use \`cc-safety-net rule tool add ops_bash ops_run_background\` to declare tools in the user config, or add \`--project\` for the project config.
 
 ## Rulebook Sources
 

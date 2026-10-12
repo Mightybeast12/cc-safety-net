@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { getRulesConfigValidation } from '@/core/policy/rules-config';
 
+const TOOL_NAME_ERROR =
+  'must be a tool name: non-empty, at most 256 characters, no whitespace or control characters';
+const ARGUMENT_NAME_ERROR =
+  'must be an argument name: non-empty, at most 256 characters, no whitespace or control characters';
+
 describe('rules config diagnostics', () => {
   test('whitespace-only sources are rejected as empty', () => {
     expect(getRulesConfigValidation({ version: 1, rules: [' \t '] }).errors).toContain(
@@ -55,6 +60,56 @@ describe('rules config diagnostics', () => {
       'repeated wrappers identify the duplicate entry',
       { version: 1, transparent_wrappers: ['rtk', 'rtk'] },
       ['transparent_wrappers[1]: duplicate command "rtk"'],
+      [],
+    ],
+    [
+      'tool declarations must be a list',
+      { version: 1, command_tools: 'ops_bash' },
+      ['command_tools must be an array of tool names or {name, cwd} objects'],
+      [],
+    ],
+    [
+      'a tool declaration names one tool exactly, as a string or a {name, cwd} object',
+      {
+        version: 1,
+        command_tools: [
+          5,
+          '',
+          'ops bash',
+          'ops\u0007bash',
+          'x'.repeat(257),
+          { cwd: 'workdir' },
+          { name: 'ops_run', cwd: 'work dir' },
+        ],
+      },
+      [
+        'command_tools[0]: must be a tool name or a {name, cwd} object',
+        `command_tools[1]: ${TOOL_NAME_ERROR}`,
+        `command_tools[2]: ${TOOL_NAME_ERROR}`,
+        `command_tools[3]: ${TOOL_NAME_ERROR}`,
+        `command_tools[4]: ${TOOL_NAME_ERROR}`,
+        `command_tools[5].name: ${TOOL_NAME_ERROR}`,
+        `command_tools[6].cwd: ${ARGUMENT_NAME_ERROR}`,
+      ],
+      [],
+    ],
+    [
+      'a tool declared twice in one file identifies the repeat',
+      { version: 1, command_tools: ['ops_bash', { name: 'ops_bash', cwd: 'workdir' }] },
+      ['command_tools[1]: duplicate tool "ops_bash"'],
+      [],
+    ],
+    [
+      'MCP-style names, 256-character names, and a cwd argument name are accepted',
+      {
+        version: 1,
+        command_tools: [
+          'mcp__server__tool',
+          'x'.repeat(256),
+          { name: 'ops_run_background', cwd: 'cwd' },
+        ],
+      },
+      [],
       [],
     ],
     ['a config with no sources is accepted', { version: 1 }, [], []],

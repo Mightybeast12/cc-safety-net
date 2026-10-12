@@ -796,6 +796,59 @@ describe('wrapper', () => {
   }, 60_000);
 });
 
+describe('a rewrite of rule.json keeps the declared command tools', () => {
+  const DECLARED = { command_tools: ['ops_bash', { name: 'ops_run_background', cwd: 'cwd' }] };
+  const legacyRule = {
+    name: 'block-docker-system-prune',
+    command: 'docker',
+    subcommand: 'system',
+    block_args: ['prune'],
+    reason: 'Use targeted cleanup instead.',
+  };
+  for (const [name, args, files, expected] of [
+    [
+      'add',
+      ['add', 'team'],
+      { [`${P}/rule.json`]: rulesConfig([], DECLARED), [`${P}/team/rulebook.json`]: TEAM },
+      rulesConfig(['team'], DECLARED),
+    ],
+    [
+      'remove',
+      ['remove', 'team'],
+      { [`${P}/rule.json`]: rulesConfig(['team'], DECLARED), [`${P}/team/rulebook.json`]: TEAM },
+      rulesConfig([], DECLARED),
+    ],
+    [
+      'init',
+      ['init'],
+      { [`${P}/rule.json`]: rulesConfig([], DECLARED) },
+      rulesConfig([], DECLARED),
+    ],
+    [
+      'wrapper add',
+      ['wrapper', 'add', 'rtk'],
+      { [`${P}/rule.json`]: rulesConfig([], DECLARED) },
+      rulesConfig([], { transparent_wrappers: ['rtk'], ...DECLARED }),
+    ],
+    [
+      'migrate',
+      ['migrate'],
+      {
+        [`${P}/rule.json`]: rulesConfig([], DECLARED),
+        'project/.safety-net.json': legacyConfig([legacyRule]),
+      },
+      rulesConfig(['project-rules'], DECLARED),
+    ],
+  ] as const) {
+    test(`rule ${name}`, async () => {
+      const outcome = await rule(args, files);
+      expect(outcome.stderr).toBe('');
+      expect(outcome.exitCode).toBe(0);
+      expect(fileAt(outcome, `${P}/rule.json`)).toBe(expected);
+    }, 60_000);
+  }
+});
+
 describe('migrate', () => {
   test('a machine with no legacy files names both places it looked', async () => {
     const outcome = await rule(['migrate']);

@@ -358,12 +358,7 @@ function ensureRulesConfig(configPath: PolicyFilesystemTarget): void {
   const loaded = readRulesConfig(configPath);
   if (!loaded.config) return;
 
-  writeJsonAtomic(configPath, {
-    version: 1,
-    rules: loaded.config.rules,
-    overrides: loaded.config.overrides ?? {},
-    transparent_wrappers: loaded.config.transparent_wrappers ?? [],
-  });
+  writeJsonAtomic(configPath, loaded.config);
 }
 
 async function runRuleWrapperCommand(environment: Environment, flags: RuleFlags): Promise<number> {
@@ -406,12 +401,7 @@ async function runRuleWrapperCommand(environment: Environment, flags: RuleFlags)
       ? [...new Set([...(config.transparent_wrappers ?? []), command])]
       : (config.transparent_wrappers ?? []).filter((wrapper) => wrapper !== command);
 
-  writeJsonAtomic(configPath, {
-    version: 1,
-    rules: config.rules,
-    overrides: config.overrides ?? {},
-    transparent_wrappers: wrappers,
-  });
+  writeJsonAtomic(configPath, { ...config, transparent_wrappers: wrappers });
   console.log(
     action === 'add'
       ? `Added transparent wrapper: ${command}`

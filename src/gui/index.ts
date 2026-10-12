@@ -586,6 +586,7 @@ function explainDraftCommand(
   const snapshot = createPolicySnapshot({
     rules: diskSnapshot.policy.rules,
     transparentWrappers: diskSnapshot.policy.transparentWrappers,
+    commandTools: diskSnapshot.policy.commandTools,
     safety: normalizeSafety(draft.safety),
     worktreeMode: draft.workflow.worktree_mode,
     destructiveCommandProtectionEnabled: draft.destructive_command_protection.enabled,

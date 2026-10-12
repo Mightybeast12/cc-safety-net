@@ -40,6 +40,7 @@ const SNAPSHOT: PolicySnapshot = Object.freeze({
   policy: Object.freeze({
     rules: Object.freeze([]),
     transparentWrappers: Object.freeze([]),
+    commandTools: Object.freeze([]),
     safety: Object.freeze({}),
     worktreeMode: false,
     destructiveCommandProtectionEnabled: true,

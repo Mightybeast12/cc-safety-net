@@ -16,6 +16,8 @@ import {
 } from './paths';
 import { assertValidRulebook, type Rulebook } from './rulebook';
 import {
+  type CommandToolDeclaration,
+  type CommandToolEntry,
   type LoadedRulebookInfo,
   type LoadedRulesPolicy,
   type RuleOverride,
@@ -87,6 +89,7 @@ export function loadRulesPolicy(
       ...applyOverrides(projectPolicy.rules, projectOverrides),
     ],
     transparent_wrappers: mergeTransparentWrappers(user.config, project.config),
+    command_tools: mergeCommandTools(user.config, project.config),
     rulebooks: [...userPolicy.rulebooks, ...projectPolicy.rulebooks],
     errors: [
       ...userReadErrors,
@@ -314,6 +317,20 @@ function mergeTransparentWrappers(
   ];
 }
 
+function mergeCommandTools(
+  userConfig: RulesConfig | null,
+  projectConfig: RulesConfig | null,
+): CommandToolDeclaration[] {
+  const user = (userConfig?.command_tools ?? []).map(toCommandToolDeclaration);
+  const project = (projectConfig?.command_tools ?? []).map(toCommandToolDeclaration);
+  return [...user, ...project.filter((tool) => !user.some((claim) => claim.name === tool.name))];
+}
+
+function toCommandToolDeclaration(entry: CommandToolEntry): CommandToolDeclaration {
+  if (typeof entry === 'string') return { name: entry };
+  return entry.cwd === undefined ? { name: entry.name } : { name: entry.name, cwd: entry.cwd };
+}
+
 function applyOverrides(
   rules: CustomRule[],
   overrides: Record<string, RuleOverride>,
@@ -369,6 +386,7 @@ function invalidLoadedRulesPolicy(
   return {
     rules: [],
     transparent_wrappers: [],
+    command_tools: [],
     rulebooks: [],
     errors: [error],
     warnings: [],

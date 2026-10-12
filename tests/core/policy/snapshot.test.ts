@@ -121,6 +121,7 @@ const ROWS: readonly Row[] = [
       expect(snapshot.state).toBe('ready');
       expect(snapshot.diagnostics).toEqual([]);
       expect(ruleNames(snapshot)).toEqual([]);
+      expect(snapshot.policy.commandTools).toEqual([]);
     },
   },
   {
@@ -614,6 +615,38 @@ const ROWS: readonly Row[] = [
     check: (snapshot) => {
       expect(reasonOf(snapshot)).toContain('Invalid JSON');
       expect(snapshot.policy.transparentWrappers).toEqual(['userwrap']);
+    },
+  },
+  {
+    name: 'tool declarations from both scopes, with the user entry winning a shared name',
+    tree: {
+      [USER_RULES]: json({
+        version: 1,
+        command_tools: ['ops_bash', { name: 'shared_tool', cwd: 'dir' }],
+      }),
+      [PROJECT_RULES]: json({
+        version: 1,
+        command_tools: [{ name: 'shared_tool', cwd: 'other' }, 'project_tool'],
+      }),
+    },
+    check: (snapshot) => {
+      expect(snapshot.state).toBe('ready');
+      expect(snapshot.policy.commandTools).toEqual([
+        { name: 'ops_bash' },
+        { name: 'shared_tool', cwd: 'dir' },
+        { name: 'project_tool' },
+      ]);
+    },
+  },
+  {
+    name: 'a malformed tool declaration that drops the user rules config it sits in',
+    tree: {
+      [USER_RULES]: json({ version: 1, command_tools: ['ops bash'] }),
+      [PROJECT_RULES]: json({ version: 1, command_tools: ['project_tool'] }),
+    },
+    check: (snapshot) => {
+      expect(reasonOf(snapshot)).toContain('command_tools[0]: must be a tool name');
+      expect(snapshot.policy.commandTools).toEqual([{ name: 'project_tool' }]);
     },
   },
   {

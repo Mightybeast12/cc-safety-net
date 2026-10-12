@@ -244,6 +244,9 @@ switch a project `safety.overrides` entry can turn off a capability that level e
 `CC_SAFETY_NET_STRICT` and `CC_SAFETY_NET_PARANOID*` flags apply after every policy override, so a
 project file never turns them off. Every weakening is listed in `status` and `doctor`, marked as
 ignored under the switch; the statusline and the GUI flag only weakenings in force.
+A `command_tools` declaration in a project `rule.json` is not a weakening and is honored with or
+without the switch: it analyzes a tool the integration does not know exactly as a built-in shell
+tool is analyzed at the user's own level, including that level's sensitive-path strictness.
 
 Adjudicated 2026-08-28. Sources: `TEAM-POLICY-DESIGN.md` threat model adjudication;
 `TEAM-POLICY-DESIGN.md` rejected alternatives (trust-gated weakening).

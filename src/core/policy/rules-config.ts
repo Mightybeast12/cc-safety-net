@@ -18,7 +18,12 @@ export type RulesConfig = {
   rules: string[];
   overrides: Record<string, RuleOverride>;
   transparent_wrappers: string[];
+  command_tools?: CommandToolEntry[];
 };
+
+export type CommandToolEntry = string | { name: string; cwd?: string };
+
+export type CommandToolDeclaration = { name: string; cwd?: string };
 
 export const DEFAULT_CONFIG: RulesConfig = {
   version: 1,
@@ -45,6 +50,7 @@ export interface LoadedRulebookInfo {
 export interface LoadedRulesPolicy {
   rules: CustomRule[];
   transparent_wrappers: string[];
+  command_tools: CommandToolDeclaration[];
   rulebooks: LoadedRulebookInfo[];
 
   errors: string[];
@@ -79,6 +85,7 @@ export function readRulesConfig(path: string | PolicyFilesystemTarget): {
         rules: parsed.rules ?? [],
         overrides: parsed.overrides ?? {},
         transparent_wrappers: parsed.transparent_wrappers ?? [],
+        ...(parsed.command_tools ? { command_tools: parsed.command_tools } : {}),
       },
       errors: [],
     };
@@ -134,7 +141,16 @@ export const INTENT_ERROR = `must be one of ${BLOCK_INTENTS.join(', ')}`;
 /** @internal */
 export const RULE_OVERRIDE_KEY_PATTERN = /^[^/]+\/[^/]+$/;
 /** @internal */
-export const RULES_CONFIG_FIELDS = ['version', 'rules', 'overrides', 'transparent_wrappers'];
+export const RULES_CONFIG_FIELDS = [
+  'version',
+  'rules',
+  'overrides',
+  'transparent_wrappers',
+  'command_tools',
+];
+/** @internal */
+export const COMMAND_TOOL_NAME_PATTERN = /^[^\s\p{Cc}]{1,256}$/u;
+const NAME_RULE = 'non-empty, at most 256 characters, no whitespace or control characters';
 
 export function getRulesConfigValidation(config: unknown): {
   errors: string[];
@@ -167,6 +183,7 @@ function rulesConfigIssues(config: unknown): Issue[] {
           .map((key) => custom(['overrides', key], 'must use <rulebook-name>/<rule-name>'))
       : []),
     ...reservedWrapperIssues(config.transparent_wrappers),
+    ...commandToolIssues(config.command_tools),
   ];
 }
 
@@ -296,6 +313,42 @@ function reservedWrapperIssues(wrappers: unknown): Issue[] {
     seen.add(wrapper);
     return [];
   });
+}
+
+function commandToolIssues(tools: unknown): Issue[] {
+  if (tools === undefined) return [];
+  if (!Array.isArray(tools)) {
+    return [typed(['command_tools'], 'must be an array of tool names or {name, cwd} objects')];
+  }
+  const seen = new Set<string>();
+  const firstClaim = (name: string, index: number) => {
+    if (seen.has(name)) return [custom(['command_tools', index], `duplicate tool "${name}"`)];
+    seen.add(name);
+    return [];
+  };
+  return tools.flatMap((tool, index): Issue[] => {
+    if (typeof tool === 'string') {
+      return isCommandToolName(tool)
+        ? firstClaim(tool, index)
+        : [typed(['command_tools', index], `must be a tool name: ${NAME_RULE}`)];
+    }
+    if (!isRecord(tool)) {
+      return [typed(['command_tools', index], 'must be a tool name or a {name, cwd} object')];
+    }
+    const issues = [
+      ...(isCommandToolName(tool.name)
+        ? []
+        : [typed(['command_tools', index, 'name'], `must be a tool name: ${NAME_RULE}`)]),
+      ...(tool.cwd === undefined || isCommandToolName(tool.cwd)
+        ? []
+        : [typed(['command_tools', index, 'cwd'], `must be an argument name: ${NAME_RULE}`)]),
+    ];
+    return issues.length > 0 ? issues : firstClaim(tool.name as string, index);
+  });
+}
+
+function isCommandToolName(value: unknown): boolean {
+  return typeof value === 'string' && COMMAND_TOOL_NAME_PATTERN.test(value);
 }
 
 function collectValidSources(

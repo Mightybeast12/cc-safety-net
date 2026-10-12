@@ -1224,6 +1224,32 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: creds('credentials'),
       },
       {
+        name: 'a print argument stays a candidate where print is rebound',
+        command: 'python3 -c "print = open; print(\'credentials\').read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'an assigned literal passed to a rebound print stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; print = open; print(p).read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'a print argument stays a candidate where print is defined',
+        command: 'python3 -c "def print(p): return open(p).read()\nprint(\'credentials\')"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'a console.log argument stays a candidate where console is rebound',
+        command:
+          "node -e \"const console = { log: require('fs').readFileSync }; console.log('.env')\"",
+        expected: env('.env'),
+      },
+      {
+        name: 'a console.log argument stays a candidate where console.log is reassigned',
+        command: "node -e \"console.log = require('fs').readFileSync; console.log('.env')\"",
+        expected: env('.env'),
+      },
+      {
         name: 'a base64 literal the code only prints is inert data in standard mode',
         command: 'node -e \'console.log("LmVudg==")\'',
         expected: env('.env'),
@@ -1232,19 +1258,21 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     ]);
   });
 
-  test('thousands of assignments to a name printed thousands of times are decided without a per-assignment rescan', () => {
-    const uses = Array.from({ length: 15000 }, () => 'v').join(',');
-    const assignments = Array.from({ length: 3000 }, (_, index) => `v = 'x${index}'`);
-    const command = python(
-      'import pathlib',
-      `print(${uses})`,
-      ...assignments,
-      "w = '.env'",
-      "pathlib.Path('README.md').read_text()",
-    );
-    const started = performance.now();
-    secretIn(command, STANDARD);
-    expect(performance.now() - started).toBeLessThan(1000);
+  test('assignments to a name printed many times cost time linear in the code size', () => {
+    const elapsed = (scale: number) => {
+      const command = python(
+        'import pathlib',
+        `print(${Array.from({ length: 5000 * scale }, () => 'v').join(',')})`,
+        ...Array.from({ length: 1000 * scale }, (_, index) => `v = 'x${index}'`),
+        "w = '.env'",
+        "pathlib.Path('README.md').read_text()",
+      );
+      const started = performance.now();
+      secretIn(command, STANDARD);
+      return performance.now() - started;
+    };
+    elapsed(1);
+    expect(elapsed(4) / elapsed(2)).toBeLessThan(3);
   });
 
   test('inline code is decided without Map.groupBy, which Node 18 and 20 lack', () => {

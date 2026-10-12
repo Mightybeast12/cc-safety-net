@@ -1516,6 +1516,7 @@ function extractInlineCodePathTargets(
       }))
     : [];
   const sequencesMayHoldArguments = namesCommandExecution(identifiers);
+  const displayCallsAreData = !rebindsDisplayCall(masked.masked, identifiers);
   const nonDataUses = identifiers
     .filter(
       (identifier) =>
@@ -1529,6 +1530,7 @@ function extractInlineCodePathTargets(
           },
           openers,
           sequencesMayHoldArguments,
+          displayCallsAreData,
         ),
     )
     .reduce((uses, identifier) => {
@@ -1542,7 +1544,13 @@ function extractInlineCodePathTargets(
       .map((literal) => {
         if (!literalRolesReadable || literalsWalkedAsShell.has(literal)) return here(literal.text);
         if (
-          inDataPosition(masked.masked, literal, openers, sequencesMayHoldArguments) ||
+          inDataPosition(
+            masked.masked,
+            literal,
+            openers,
+            sequencesMayHoldArguments,
+            displayCallsAreData,
+          ) ||
           assignedOnlyToData(masked.masked, literal, openers, nonDataUses)
         ) {
           return { ...here(literal.text), literalRole: 'data' as const };
@@ -1608,6 +1616,19 @@ function holdsUnreadableLiteralRoles(masked: string, commentOpener: string): boo
   );
 }
 
+function rebindsDisplayCall(masked: string, identifiers: readonly Identifier[]): boolean {
+  return identifiers.some((identifier) => {
+    const call = DISPLAY_CALL_SHAPE.get(identifier.name);
+    if (call === undefined) return false;
+    const end = identifier.index + identifier.name.length;
+    return (
+      DISPLAY_NAME_BINDING.test(
+        masked.slice(Math.max(0, identifier.index - 10), identifier.index),
+      ) || !call.test(masked.slice(end, end + 40))
+    );
+  });
+}
+
 function namesCommandExecution(identifiers: readonly Identifier[]): boolean {
   return identifiers.some((identifier) =>
     identifierParts(identifier.name).some((part) => COMMAND_EXECUTION_IDENTIFIER_PART.test(part)),
@@ -1659,6 +1680,7 @@ function inDataPosition(
   literal: CodeLiteral,
   openers: readonly number[],
   sequencesMayHoldArguments: boolean,
+  displayCallsAreData: boolean,
 ): boolean {
   const opener = openers[literal.tokenStart] ?? -1;
   const bracket = masked[opener] ?? '';
@@ -1678,7 +1700,7 @@ function inDataPosition(
   if (bracket !== '(') return element && bracket !== '';
   return (
     element &&
-    (DISPLAY_CALL.test(masked.slice(Math.max(0, opener - 20), opener)) ||
+    ((displayCallsAreData && DISPLAY_CALL.test(masked.slice(Math.max(0, opener - 20), opener))) ||
       ((previous === ',' || next === ',') && isGroupingParenthesis(masked, opener)))
   );
 }
@@ -1701,6 +1723,11 @@ function assignedOnlyToData(
 }
 
 const DISPLAY_CALL = /(?:^|[^\w$.])(?:print|console\s*\.\s*log)\s*$/;
+const DISPLAY_CALL_SHAPE = new Map([
+  ['print', /^\s*\(/],
+  ['console', /^\s*\.\s*[\w$]+\s*\(/],
+]);
+const DISPLAY_NAME_BINDING = /(?:as|class|const|def|function|import|let|var)\s+$/;
 const STATEMENT_ASSIGNMENT_TARGET = /[;\n{]\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=\s*$/;
 const PATH_CONSTRUCTOR_CALL = /(?:^|[^\w$.])(?:pathlib\s*\.\s*)?Path\s*$/;
 const PATH_WRITE_METHOD = /^\s*\.\s*write_(?:text|bytes)\s*\(/;

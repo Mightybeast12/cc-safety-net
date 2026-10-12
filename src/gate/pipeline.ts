@@ -137,6 +137,7 @@ export function evaluateGuard(
       : hostInvocation;
   if ('decision' in promotion) return promotion;
   const invocation = promotion;
+  const promoted = invocation === hostInvocation ? {} : { promotedInvocation: invocation };
   const command = isCommandInvocation(invocation) ? invocation.command : inputCommand;
 
   const facts = callDependency('policy-protection', command, () => createSemanticFacts(invocation));
@@ -149,6 +150,7 @@ export function evaluateGuard(
   ) {
     return {
       stage: 'command-analysis',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_RECURSION_LIMIT,
@@ -161,6 +163,7 @@ export function evaluateGuard(
   if (inputCandidate?.program.status === 'limited') {
     return {
       stage: 'command-validation',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
@@ -184,6 +187,7 @@ export function evaluateGuard(
     const displayCommand = command ?? policyTarget.target;
     return {
       stage: 'policy-protection',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_POLICY_CONFIG_PROTECTION,
@@ -201,6 +205,7 @@ export function evaluateGuard(
     const displayCommand = command ?? policyApplyTarget.target;
     return {
       stage: 'policy-protection',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_POLICY_APPLY_PROTECTION,
@@ -218,6 +223,7 @@ export function evaluateGuard(
     const displayCommand = command ?? gitMetadataTarget.target;
     return {
       stage: 'policy-protection',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_GIT_METADATA_PROTECTION,
@@ -235,7 +241,7 @@ export function evaluateGuard(
   const reported = {
     level: modes.effectiveLevel,
     ...getConfigFallback(snapshot),
-    ...(invocation === hostInvocation ? {} : { promotedInvocation: invocation }),
+    ...promoted,
   };
   const secretTarget =
     policy.secretProtection.enabled === false
@@ -334,13 +340,19 @@ function promoteDeclaredCommandTool(
 ): ToolInvocation | GuardEvaluation {
   const requestedCwds = [
     ...new Set(
-      (cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS)
-        .map((key) => Object.getOwnPropertyDescriptor(invocation.input, key)?.value)
-        .filter((value): value is string => typeof value === 'string'),
+      (cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS).flatMap((key) => {
+        const descriptor = Object.getOwnPropertyDescriptor(invocation.input, key);
+        return descriptor ? [descriptor.value] : [];
+      }),
     ),
   ];
-  if (requestedCwds.length > 1) return failedClosedEvaluation('command-validation', command);
-  const requestedCwd = requestedCwds[0];
+  const usableCwds = requestedCwds.filter(
+    (value): value is string => typeof value === 'string' && value.trim() !== '',
+  );
+  if (requestedCwds.length > 1 || usableCwds.length !== requestedCwds.length) {
+    return failedClosedEvaluation('command-validation', command);
+  }
+  const requestedCwd = usableCwds[0];
   const executionCwd =
     requestedCwd === undefined
       ? invocation.context.configCwd

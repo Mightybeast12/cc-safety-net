@@ -413,6 +413,15 @@ describe('a tool the user declared as a command tool', () => {
     ).toBe('analysis.failed-closed');
   });
 
+  test('a blank or non-string working directory argument is denied', () => {
+    expect(verdict(evaluate(unknown('ops_bash', { command: 'echo hi', workdir: '' })))).toBe(
+      'analysis.failed-closed',
+    );
+    expect(verdict(evaluate(unknown('ops_bash', { command: 'echo hi', cwd: 7 })))).toBe(
+      'analysis.failed-closed',
+    );
+  });
+
   test('a working directory that does not exist is denied as unusable', () => {
     const evaluation = evaluate(unknown('ops_bash', { command: 'echo hi', workdir: 'missing' }));
     expect(verdict(evaluation)).toBe('cwd.requested-unusable');
@@ -452,6 +461,9 @@ describe('a tool the user declared as a command tool', () => {
     expect(evaluation).toStrictEqual({
       stage: 'policy-protection',
       decision: expect.objectContaining({ ruleId: 'guard.git-metadata' }),
+      promotedInvocation: expect.objectContaining({
+        context: { configCwd: plain, executionCwd: realpathSync(project) },
+      }),
     });
   });
 });

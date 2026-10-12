@@ -4,7 +4,7 @@ import type { CommandToolKind, ToolRoute } from '@/gate/invocation';
 import { detectClaudeShapeAgent } from '@/hosts/hook/agent-detection';
 import { type PreToolUseHookInput, runPreToolUseHook } from '@/hosts/hook/pre-tool-use';
 
-const CLAUDE_CODE_COMMAND_TOOLS = new Map<string, CommandToolKind>([
+export const CLAUDE_CODE_COMMAND_TOOLS = new Map<string, CommandToolKind>([
   ['Bash', 'posix'],
   ['PowerShell', 'powershell'],
   ['Monitor', 'posix'],

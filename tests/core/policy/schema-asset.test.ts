@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BLOCK_INTENTS } from '@/core/decision';
 import { RULE_SOURCE_LIMIT } from '@/core/policy/resource-limits';
-import { RULE_OVERRIDE_KEY_PATTERN, RULES_CONFIG_FIELDS } from '@/core/policy/rules-config';
+import {
+  COMMAND_TOOL_NAME_PATTERN,
+  RULE_OVERRIDE_KEY_PATTERN,
+  RULES_CONFIG_FIELDS,
+} from '@/core/policy/rules-config';
 import { COMMAND_PATTERN, MAX_REASON_LENGTH } from '@/core/rules/constants';
 
 describe('the published JSON Schema asset', () => {
@@ -29,5 +33,12 @@ describe('the published JSON Schema asset', () => {
       schema.properties.overrides.additionalProperties.anyOf[1].properties.reason.maxLength,
     ).toBe(MAX_REASON_LENGTH);
     expect(schema.properties.transparent_wrappers.items.pattern).toBe(COMMAND_PATTERN.source);
+    const [nameEntry, objectEntry] = schema.properties.command_tools.items.anyOf;
+    expect(RULES_CONFIG_FIELDS).toContain('command_tools');
+    expect([
+      nameEntry.pattern,
+      objectEntry.properties.name.pattern,
+      objectEntry.properties.cwd.pattern,
+    ]).toEqual(Array(3).fill(COMMAND_TOOL_NAME_PATTERN.source));
   });
 });

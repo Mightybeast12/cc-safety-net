@@ -378,12 +378,7 @@ async function addRulebookSourceInternal(
       configWriteArmed = true;
       writeJsonAtomic(
         scope.configTarget,
-        {
-          version: 1,
-          rules: nextRules,
-          overrides: config.overrides ?? {},
-          transparent_wrappers: config.transparent_wrappers ?? [],
-        },
+        { ...config, rules: nextRules },
         undefined,
         hooks._testAfterPolicyRename,
       );
@@ -597,10 +592,8 @@ async function removeRulebookSourceInternal(
     writeJsonAtomic(
       scope.configTarget,
       {
-        version: 1,
+        ...loaded.config,
         rules: loaded.config.rules.filter((spec) => !matches.specs.includes(spec)),
-        overrides: loaded.config.overrides ?? {},
-        transparent_wrappers: loaded.config.transparent_wrappers ?? [],
       },
       undefined,
       hooks._testAfterPolicyRename,

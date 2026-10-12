@@ -29,7 +29,7 @@ type CursorHookOutput =
   | { permission: 'allow' }
   | { permission: 'deny'; user_message: string; agent_message: string };
 
-const CURSOR_COMMAND_TOOLS = new Map<string, CommandToolKind>([['Shell', 'auto']]);
+export const CURSOR_COMMAND_TOOLS = new Map<string, CommandToolKind>([['Shell', 'auto']]);
 
 function getCursorToolRoute(toolName: string) {
   return getToolRoute(toolName, CURSOR_COMMAND_TOOLS);

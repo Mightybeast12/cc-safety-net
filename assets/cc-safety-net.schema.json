@@ -74,6 +74,36 @@
         "description": "Command name such as 'git', 'docker', or 'rtk'."
       },
       "uniqueItems": true
+    },
+    "command_tools": {
+      "default": [],
+      "description": "Tool names, beyond each integration's built-in shell tools, whose 'command' argument is analyzed as a shell command",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[^\\s\\p{Cc}]{1,256}$",
+            "description": "Exact tool name such as 'ops_bash'. The working directory is read from 'workdir', 'cwd', or 'working_directory'."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[^\\s\\p{Cc}]{1,256}$",
+                "description": "Exact tool name."
+              },
+              "cwd": {
+                "type": "string",
+                "pattern": "^[^\\s\\p{Cc}]{1,256}$",
+                "description": "Name of the argument that holds the working directory."
+              }
+            },
+            "required": ["name"]
+          }
+        ]
+      }
     }
   },
   "required": ["version"],

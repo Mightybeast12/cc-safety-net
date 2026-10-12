@@ -11,7 +11,7 @@ import {
   type PluginToolCallHost,
 } from '@/hosts/hook/plugin-adapter';
 
-const OPENCLAW_EXEC_TOOL = 'exec';
+export const OPENCLAW_EXEC_TOOL = 'exec';
 
 const PROVEN_EXEC_HOSTS = new Set(['auto', 'gateway']);
 

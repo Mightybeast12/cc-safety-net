@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCwdDenial, createFailedClosedDenial, formatDenial } from '@/core/denial';
 import {
@@ -217,6 +217,33 @@ describeDifferential('one DeepSeek Harness tool execution', ROWS, runRow, (row, 
       sessionId: SESSION,
     });
   }
+});
+
+test('a tool the user declared as a command tool is blocked and audited like bash', async () => {
+  const rules = join(fixture.home, '.cc-safety-net', 'rules');
+  mkdirSync(rules, { recursive: true });
+  writeFileSync(
+    join(rules, 'rule.json'),
+    JSON.stringify({ version: 1, command_tools: ['ops_bash'] }),
+  );
+  const handle = createDeepSeekHarnessGuardHandler();
+  const decided = await captureInProcessCall(fixture, {}, () => [
+    handle(tool('ops_bash', { command: 'git push --force origin main' })(fixture), fixture.project),
+    handle(tool('ops_bash', { command: 'git status' })(fixture), fixture.project),
+  ]);
+  expect(decided.returned?.[0]).toContain('Rule: git.push-force');
+  expect(decided.returned?.[1]).toBeUndefined();
+  expect(decided.stderr).toStrictEqual([]);
+  expect(decided.entries.map((line) => line.entry)).toMatchObject([
+    { decision: 'deny', toolName: 'ops_bash', command: 'git push --force origin main' },
+    {
+      decision: 'allow',
+      toolName: 'ops_bash',
+      command: 'git status',
+      cwd: realpathSync(fixture.project),
+      sessionId: SESSION,
+    },
+  ]);
 });
 
 test('registering installs one tool guard that denies with the formatted reason', async () => {

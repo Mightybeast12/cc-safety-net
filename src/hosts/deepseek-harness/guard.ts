@@ -25,7 +25,7 @@ type DeepSeekHarnessContext = {
   tools: { guard: (guard: DeepSeekHarnessToolGuard) => () => void };
 };
 
-const DEEPSEEK_HARNESS_COMMAND_TOOLS = new Map<string, CommandToolKind>([
+export const DEEPSEEK_HARNESS_COMMAND_TOOLS = new Map<string, CommandToolKind>([
   ['bash', 'posix'],
   ['pwsh', 'powershell'],
 ]);

@@ -78,7 +78,6 @@ type ToolInputObjectSnapshot = {
   entries: readonly (readonly [string, unknown])[];
 };
 
-/** @internal */
 export function normalizeToolName(toolName: string): string {
   return toolName.replace(/[-_\s]/g, '').toLowerCase();
 }

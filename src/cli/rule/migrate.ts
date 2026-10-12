@@ -18,7 +18,7 @@ import {
   getUserRulesConfigPath,
   projectPolicyIsUserPolicy,
 } from '@/core/policy/paths';
-import { readRulesConfig } from '@/core/policy/rules-config';
+import { type RulesConfig, readRulesConfig } from '@/core/policy/rules-config';
 import type { CustomRule } from '@/core/policy/types';
 import { getLegacyProjectRulesConfigPath, getScopePaths } from '@/rules-manager/paths';
 import { syncRulesConfig } from '@/rules-manager/sync';
@@ -128,9 +128,10 @@ async function migrateRulesScope(
     rulebookTarget,
     rulebookName,
     legacy.config.rules,
-    config.rules.includes(rulebookName) ? config.rules : [...config.rules, rulebookName],
-    config.overrides ?? {},
-    config.transparent_wrappers ?? [],
+    {
+      ...config,
+      rules: config.rules.includes(rulebookName) ? config.rules : [...config.rules, rulebookName],
+    },
   );
   if (!result.ok) {
     restoreFiles(snapshots);
@@ -168,17 +169,10 @@ async function writeAndSyncMigratedRulebook(
   rulebookTarget: PolicyFilesystemTarget,
   rulebookName: string,
   rules: CustomRule[],
-  configRules: string[],
-  overrides: Record<string, unknown>,
-  transparentWrappers: string[],
+  config: RulesConfig,
 ): Promise<{ ok: boolean; errors: string[] }> {
   try {
-    writeJsonAtomic(configTarget, {
-      version: 1,
-      rules: configRules,
-      overrides,
-      transparent_wrappers: transparentWrappers,
-    });
+    writeJsonAtomic(configTarget, config);
     writeJsonAtomic(rulebookTarget, getMigratedRulebook(rulebookName, options.migratedFrom, rules));
     return await syncRulesConfig(environment, options.syncOptions);
   } catch (error) {

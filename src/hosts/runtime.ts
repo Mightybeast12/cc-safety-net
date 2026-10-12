@@ -52,7 +52,7 @@ function writeRuntimeAudit(
   writeGuardAudit(
     environment,
     projectGuardAudit(
-      invocation,
+      evaluation.promotedInvocation ?? invocation,
       evaluation,
       options.guard?.auditAllowed ?? false,
       includeInvocationCommand,

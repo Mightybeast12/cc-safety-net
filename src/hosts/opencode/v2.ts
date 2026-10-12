@@ -5,7 +5,11 @@ import { Tool } from '@opencode/schema/tool';
 import { Effect } from 'effect';
 import { getNonCommandToolInputKind } from '@/core/tool-input';
 import { loadBuiltinCommands } from './builtin-commands/commands';
-import { evaluateOpenCodeTool, resolveOpenCodeShellRoute } from './plugin';
+import {
+  evaluateOpenCodeTool,
+  OPENCODE_V2_COMMAND_TOOL,
+  resolveOpenCodeShellRoute,
+} from './plugin';
 
 const POSIX_SHELL_PROBE = 'x=ccsn; case $x in ccsn) echo $x-posix;; esac';
 const POSIX_SHELL_PROBE_TIMEOUT_MS = 10_000;
@@ -44,7 +48,7 @@ export function createOpenCodeV2Plugin() {
                 sessionID: event.sessionID,
                 toolInput: event.input,
                 route:
-                  event.tool === 'shell'
+                  event.tool === OPENCODE_V2_COMMAND_TOOL
                     ? { kind: 'command', shell }
                     : { kind: getNonCommandToolInputKind(event.tool) },
               }),

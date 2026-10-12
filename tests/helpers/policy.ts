@@ -13,6 +13,7 @@ export interface TestPolicyInput {
   version?: number;
   rules?: readonly CustomRule[];
   transparent_wrappers?: readonly string[];
+  commandTools?: readonly { name: string; cwd?: string }[];
   safety?: PolicySafety;
   worktreeMode?: boolean;
   destructiveCommandProtectionEnabled?: boolean;
@@ -44,6 +45,7 @@ export function policySnapshot(input: TestPolicyInput = {}): PolicySnapshot {
   const policy = {
     rules: input.rules ?? [],
     transparentWrappers: input.transparent_wrappers ?? [],
+    commandTools: [...(input.commandTools ?? [])],
     safety: input.safety ?? {},
     worktreeMode: input.worktreeMode ?? false,
     destructiveCommandProtectionEnabled: input.destructiveCommandProtectionEnabled ?? true,

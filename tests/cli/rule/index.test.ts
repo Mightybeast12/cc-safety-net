@@ -127,6 +127,23 @@ describe('help', () => {
     }, 60_000);
   }
 
+  test('`rule tool --help` lists all three actions instead of picking one', async () => {
+    const outcome = await rule(['tool', '--help']);
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toContain('tool add <name...> [--cwd-arg <name>] [--project]');
+    expect(outcome.stdout).toContain('tool remove <name...> [--project]');
+    expect(outcome.stdout).toContain('tool list');
+  }, 60_000);
+
+  test('`rule tool add --help` describes adding a tool', async () => {
+    const outcome = await rule(['tool', 'add', '--help']);
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout.split('\n')[0]).toBe('cc-safety-net rule tool');
+    expect(outcome.stdout).toContain(
+      '  cc-safety-net rule tool add <name...> [--cwd-arg <name>] [--project]',
+    );
+  }, 60_000);
+
   test('`rule bogus --help` stays a typo rather than becoming a help request', async () => {
     const outcome = await rule(['bogus', '--help']);
     expect(outcome.exitCode).toBe(1);
@@ -134,6 +151,13 @@ describe('help', () => {
     expect(outcome.stderr).toBe('Unknown rule subcommand: bogus\n');
   }, 60_000);
 });
+
+const NOT_DECLARABLE = 'and is already analyzed. Built-in tools cannot be declared.';
+const shellToolRefusal = (name: string) =>
+  `Error: "${name}" is a built-in shell tool of Claude Code, Codex, DeepSeek Harness, GitHub Copilot CLI, Kimi Code, OpenCode and Pi, ${NOT_DECLARABLE}`;
+const fileToolRefusal = (name: string) =>
+  `Error: "${name}" is a built-in file tool, ${NOT_DECLARABLE}`;
+const NAME_RULE = 'non-empty, at most 256 characters, no whitespace or control characters';
 
 const usageErrors: [readonly string[], string][] = [
   [['add', 'acme/repo', '--only'], '--only requires at least one value'],
@@ -157,6 +181,35 @@ const usageErrors: [readonly string[], string][] = [
   [['wrapper', 'list', 'extra'], 'Unexpected rule wrapper argument: extra'],
   [['wrapper', 'add'], 'rule wrapper add requires a command'],
   [['wrapper', 'add', 'a', 'b', 'c'], 'Unexpected rule wrapper argument: b'],
+  [['tool'], 'rule tool requires add, remove, or list'],
+  [['tool', 'bogus'], 'Unknown rule tool action: bogus'],
+  [['tool', 'list', 'extra'], 'Unexpected rule tool argument: extra'],
+  [['tool', 'add'], 'rule tool add requires a tool name'],
+  [['tool', 'remove'], 'rule tool remove requires a tool name'],
+  [['tool', 'add', 'ops_bash', 'bash'], shellToolRefusal('bash')],
+  [
+    ['tool', 'add', 'bad name', 'read'],
+    `Error: "bad name" is not a tool name: ${NAME_RULE}.\n${fileToolRefusal('read')}`,
+  ],
+  [['tool', 'add', 'ops_bash', '--global'], 'Unknown option for rule tool: --global'],
+  [['tool', 'list', '--project'], 'Unknown option for rule tool list: --project'],
+  [
+    ['tool', 'remove', 'ops_bash', '--cwd-arg', 'dir'],
+    'Unknown option for rule tool remove: --cwd-arg',
+  ],
+  [['tool', 'add', 'ops_bash', '--cwd-arg'], '--cwd-arg requires a value'],
+  [['add', 'team', '--project'], 'Unknown option for rule add: --project'],
+  [['wrapper', 'add', 'rtk', '--cwd-arg', 'dir'], 'Unknown option for rule wrapper: --cwd-arg'],
+  [['tool', 'add', 'bash'], shellToolRefusal('bash')],
+  [['tool', 'add', 'Bash'], shellToolRefusal('Bash')],
+  [['tool', 'add', 'bash', '--project'], shellToolRefusal('bash')],
+  [['tool', 'add', 'read'], fileToolRefusal('read')],
+  [['tool', 'add', 'read', '--project'], fileToolRefusal('read')],
+  [['tool', 'add', 'bad name'], `Error: "bad name" is not a tool name: ${NAME_RULE}.`],
+  [
+    ['tool', 'add', 'ops_bash', '--cwd-arg', 'two words'],
+    `Error: "two words" is not an argument name: ${NAME_RULE}.`,
+  ],
   [['init', 'a', 'b'], 'Unexpected rule argument: b'],
   [['list', '--global'], 'Unknown option for rule list: --global'],
   [
@@ -796,6 +849,234 @@ describe('wrapper', () => {
   }, 60_000);
 });
 
+describe('tool', () => {
+  const USER_CONFIG = '<root>/home/.cc-safety-net/rules/rule.json';
+  const PROJECT_CONFIG = '<root>/project/.cc-safety-net/rules/rule.json';
+
+  test('add declares the tool in the user config by default', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_bash']);
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(`Added command tool: ops_bash\nScope: user (${USER_CONFIG})\n`);
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: ['ops_bash'] }),
+    );
+    expect(holds(outcome, 'project/.cc-safety-net')).toBeFalse();
+  }, 60_000);
+
+  test('--project declares the tool in the project config', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_bash', '--project'], {
+      [`${P}/rule.json`]: rulesConfig(['team']),
+      [`${P}/team/rulebook.json`]: TEAM,
+    });
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      `Added command tool: ops_bash\nScope: project (${PROJECT_CONFIG})\n`,
+    );
+    expect(fileAt(outcome, `${P}/rule.json`)).toBe(
+      rulesConfig(['team'], { command_tools: ['ops_bash'] }),
+    );
+    expect(holds(outcome, 'home/.cc-safety-net')).toBeFalse();
+  }, 60_000);
+
+  test('--cwd-arg records the working-directory argument name', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_run_background', '--cwd-arg', 'dir']);
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      `Added command tool: ops_run_background (cwd argument: dir)\nScope: user (${USER_CONFIG})\n`,
+    );
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: [{ name: 'ops_run_background', cwd: 'dir' }] }),
+    );
+  }, 60_000);
+
+  test('add declares every tool named in one command', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_bash', 'ops_run_background', 'ops_bash']);
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      `Added command tool: ops_bash\nAdded command tool: ops_run_background\nScope: user (${USER_CONFIG})\n`,
+    );
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: ['ops_bash', 'ops_run_background'] }),
+    );
+  }, 60_000);
+
+  test('--cwd-arg applies to every tool named in the command', async () => {
+    const outcome = await rule(['tool', 'add', 'tool_a', 'tool_b', '--cwd-arg', 'dir']);
+    expect(outcome.exitCode).toBe(0);
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], {
+        command_tools: [
+          { name: 'tool_a', cwd: 'dir' },
+          { name: 'tool_b', cwd: 'dir' },
+        ],
+      }),
+    );
+  }, 60_000);
+
+  test('remove drops every tool named in one command', async () => {
+    const outcome = await rule(['tool', 'remove', 'ops_bash', 'ops_run_background'], {
+      [`${U}/rule.json`]: rulesConfig([], {
+        command_tools: ['ops_bash', 'other_tool', 'ops_run_background'],
+      }),
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      `Removed command tool: ops_bash\nRemoved command tool: ops_run_background\nScope: user (${USER_CONFIG})\n`,
+    );
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: ['other_tool'] }),
+    );
+  }, 60_000);
+
+  test('adding a declared tool again replaces its entry in place', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_bash', '--cwd-arg', 'workdir'], {
+      [`${U}/rule.json`]: rulesConfig([], { command_tools: ['ops_bash', 'other_tool'] }),
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: [{ name: 'ops_bash', cwd: 'workdir' }, 'other_tool'] }),
+    );
+  }, 60_000);
+
+  test('remove drops the tool from the user config and keeps the rest', async () => {
+    const outcome = await rule(['tool', 'remove', 'ops_bash'], {
+      [`${U}/rule.json`]: rulesConfig([], {
+        command_tools: [{ name: 'ops_bash', cwd: 'dir' }, 'other_tool'],
+      }),
+      [`${P}/rule.json`]: rulesConfig([], { command_tools: ['ops_bash'] }),
+    });
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(`Removed command tool: ops_bash\nScope: user (${USER_CONFIG})\n`);
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: ['other_tool'] }),
+    );
+    expect(fileAt(outcome, `${P}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: ['ops_bash'] }),
+    );
+  }, 60_000);
+
+  test('remove --project drops the tool from the project config only', async () => {
+    const outcome = await rule(['tool', 'remove', 'ops_bash', '--project'], {
+      [`${U}/rule.json`]: rulesConfig([], { command_tools: ['ops_bash'] }),
+      [`${P}/rule.json`]: rulesConfig([], { command_tools: ['ops_bash'] }),
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      `Removed command tool: ops_bash\nScope: project (${PROJECT_CONFIG})\n`,
+    );
+    expect(fileAt(outcome, `${P}/rule.json`)).toBe(rulesConfig([], { command_tools: [] }));
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig([], { command_tools: ['ops_bash'] }),
+    );
+  }, 60_000);
+
+  test('remove can clear a built-in name that was declared by hand', async () => {
+    const outcome = await rule(['tool', 'remove', 'bash'], {
+      [`${U}/rule.json`]: rulesConfig([], { command_tools: ['bash'] }),
+    });
+    expect(outcome.exitCode).toBe(0);
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(rulesConfig([], { command_tools: [] }));
+  }, 60_000);
+
+  test('list shows every entry of both scopes with its scope and cwd argument', async () => {
+    const outcome = await rule(['tool', 'list'], {
+      [`${U}/rule.json`]: rulesConfig([], {
+        command_tools: ['ops_bash', { name: 'ops_run_background', cwd: 'cwd' }],
+      }),
+      [`${P}/rule.json`]: rulesConfig([], { command_tools: ['team_shell'] }),
+    });
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe(
+      [
+        'Command tools (3):',
+        '  - [user] ops_bash',
+        '  - [user] ops_run_background',
+        '      Cwd argument: cwd',
+        '  - [project] team_shell',
+        '',
+      ].join('\n'),
+    );
+  }, 60_000);
+
+  test('list says so when nothing is declared', async () => {
+    const outcome = await rule(['tool', 'list']);
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe('Command tools: (none)\n');
+  }, 60_000);
+
+  test('list over a config that does not parse fails', async () => {
+    const outcome = await rule(['tool', 'list'], { [`${P}/rule.json`]: 'not json' });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stdout).toBe('');
+    expect(outcome.stderr).toBe(`${PROJECT_CONFIG}: Invalid JSON\n`);
+  }, 60_000);
+
+  test('add over a config that does not parse writes nothing', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_bash'], { [`${U}/rule.json`]: 'not json' });
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toBe('Invalid JSON\n');
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe('not json');
+  }, 60_000);
+});
+
+describe('a rewrite of rule.json keeps the declared command tools', () => {
+  const DECLARED = { command_tools: ['ops_bash', { name: 'ops_run_background', cwd: 'cwd' }] };
+  const legacyRule = {
+    name: 'block-docker-system-prune',
+    command: 'docker',
+    subcommand: 'system',
+    block_args: ['prune'],
+    reason: 'Use targeted cleanup instead.',
+  };
+  for (const [name, args, files, expected] of [
+    [
+      'add',
+      ['add', 'team'],
+      { [`${P}/rule.json`]: rulesConfig([], DECLARED), [`${P}/team/rulebook.json`]: TEAM },
+      rulesConfig(['team'], DECLARED),
+    ],
+    [
+      'remove',
+      ['remove', 'team'],
+      { [`${P}/rule.json`]: rulesConfig(['team'], DECLARED), [`${P}/team/rulebook.json`]: TEAM },
+      rulesConfig([], DECLARED),
+    ],
+    [
+      'init',
+      ['init'],
+      { [`${P}/rule.json`]: rulesConfig([], DECLARED) },
+      rulesConfig([], DECLARED),
+    ],
+    [
+      'wrapper add',
+      ['wrapper', 'add', 'rtk'],
+      { [`${P}/rule.json`]: rulesConfig([], DECLARED) },
+      rulesConfig([], { transparent_wrappers: ['rtk'], ...DECLARED }),
+    ],
+    [
+      'migrate',
+      ['migrate'],
+      {
+        [`${P}/rule.json`]: rulesConfig([], DECLARED),
+        'project/.safety-net.json': legacyConfig([legacyRule]),
+      },
+      rulesConfig(['project-rules'], DECLARED),
+    ],
+  ] as const) {
+    test(`rule ${name}`, async () => {
+      const outcome = await rule(args, files);
+      expect(outcome.stderr).toBe('');
+      expect(outcome.exitCode).toBe(0);
+      expect(fileAt(outcome, `${P}/rule.json`)).toBe(expected);
+    }, 60_000);
+  }
+});
+
 describe('migrate', () => {
   test('a machine with no legacy files names both places it looked', async () => {
     const outcome = await rule(['migrate']);
@@ -1009,6 +1290,36 @@ describe('project-scope writes from home', () => {
     const outcome = await rule(['add', 'other', '--global'], HOME_RULES, fromHome);
     expect(outcome.exitCode).toBe(0);
     expect(fileAt(outcome, `${U}/rule.json`)).toBe(rulesConfig(['team', 'other']));
+  }, 60_000);
+
+  for (const action of ['add', 'remove']) {
+    test(`\`rule tool ${action} --project\` is refused and the user config is untouched`, async () => {
+      const outcome = await rule(['tool', action, 'ops_bash', '--project'], HOME_RULES, fromHome);
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.stdout).toBe('');
+      expect(outcome.stderr).toBe(
+        '<root>/home/.cc-safety-net/rules/rule.json is the user rule config, not a project rule config; drop --project for the user scope, or run from a project directory\n',
+      );
+      expect(fileAt(outcome, `${U}/rule.json`)).toBe(rulesConfig(['team']));
+    }, 60_000);
+  }
+
+  test('tool add from home writes the user config by default', async () => {
+    const outcome = await rule(['tool', 'add', 'ops_bash'], HOME_RULES, fromHome);
+    expect(outcome.exitCode).toBe(0);
+    expect(fileAt(outcome, `${U}/rule.json`)).toBe(
+      rulesConfig(['team'], { command_tools: ['ops_bash'] }),
+    );
+  }, 60_000);
+
+  test('tool list from home lists the user config once', async () => {
+    const outcome = await rule(
+      ['tool', 'list'],
+      { [`${U}/rule.json`]: rulesConfig([], { command_tools: ['ops_bash'] }) },
+      fromHome,
+    );
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.stdout).toBe('Command tools (1):\n  - [user] ops_bash\n');
   }, 60_000);
 
   test('wrapper list from home still reads the user config', async () => {

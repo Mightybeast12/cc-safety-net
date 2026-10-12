@@ -22,6 +22,7 @@ export function loadPolicySnapshot(
   const policy = {
     rules: rules.rules,
     transparentWrappers: rules.transparent_wrappers,
+    commandTools: rules.command_tools,
     safety: userPolicy.safety,
     worktreeMode: userPolicy.worktreeMode,
     destructiveCommandProtectionEnabled: userPolicy.destructiveCommandProtectionEnabled,

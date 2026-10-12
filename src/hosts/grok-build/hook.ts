@@ -27,7 +27,7 @@ interface GrokBuildHookInput {
 
 type GrokBuildHookOutput = { decision: 'allow' } | { decision: 'deny'; reason: string };
 
-const GROK_BUILD_COMMAND_TOOLS = new Map<string, CommandToolKind>([
+export const GROK_BUILD_COMMAND_TOOLS = new Map<string, CommandToolKind>([
   ['run_terminal_command', 'auto'],
   ['monitor', 'auto'],
 ]);

@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir as systemTemp } from 'node:os';
 import { join, sep } from 'node:path';
 import { AnalysisLimit } from '@/core/budget';
 import { createProcessEnvironment } from '@/core/environment';
+import { createCwdDenial } from '@/core/denial';
 import { getUserPolicyPath } from '@/core/policy/paths';
 import { StructuralShellSyntaxLimitError as PortedStructuralLimit } from '@/gate/guards/semantic-facts';
 import { createToolInvocation, type ToolInvocation, type ToolRoute } from '@/gate/invocation';
@@ -344,5 +345,125 @@ describe('git metadata for the execution and configuration directories', () => {
   test('a directory outside a repository contributes nothing', () => {
     expect(metadataFor(plain, tooling)?.entries).toStrictEqual([anchor(tooling)]);
     expect(metadataFor(plain, plain)).toBeNull();
+  });
+});
+
+describe('a tool the user declared as a command tool', () => {
+  const home = join(fixtureRoot, 'home');
+  mkdirSync(join(home, '.ssh'), { recursive: true });
+  const isolated = { ...environment, home: realpathSync(home) };
+  const declared = policySnapshot({
+    commandTools: [
+      { name: 'ops_bash' },
+      { name: 'ops_run_background' },
+      { name: 'ops_explicit', cwd: 'dir' },
+      { name: 'Bash', cwd: 'dir' },
+    ],
+  });
+  const unknown = (toolName: string, input: unknown) =>
+    invocation(toolName, input, { kind: 'unknown' }, plain);
+  const evaluate = (call: ToolInvocation, snapshot = declared) =>
+    portedEvaluateGuard(call, {
+      environment: isolated,
+      dependencies: { loadPolicySnapshot: () => snapshot },
+    });
+  const verdict = (evaluation: GuardEvaluation) =>
+    evaluation.decision.kind === 'deny' ? evaluation.decision.ruleId : 'allow';
+
+  test('a destructive command is analyzed like a built-in shell tool', () => {
+    expect(verdict(evaluate(unknown('ops_bash', { command: 'git reset --hard' })))).toBe(
+      'git.reset-hard',
+    );
+  });
+
+  test('the same tool without a declaration stays a non-command tool', () => {
+    const evaluation = evaluate(
+      unknown('ops_bash', { command: 'git reset --hard' }),
+      readySnapshot,
+    );
+    expect([evaluation.stage, verdict(evaluation)]).toEqual(['non-command', 'allow']);
+  });
+
+  test('an everyday command passes command analysis', () => {
+    const evaluation = evaluate(unknown('ops_bash', { command: 'echo hi' }));
+    expect([evaluation.stage, verdict(evaluation)]).toEqual(['command-analysis', 'allow']);
+  });
+
+  test('a call without a command stays a non-command tool', () => {
+    const evaluation = evaluate(unknown('ops_bash', { script_path: 'deploy.sh' }));
+    expect([evaluation.stage, verdict(evaluation)]).toEqual(['non-command', 'allow']);
+  });
+
+  test('standard mode reaches the same verdict on metadata of a sensitive path as bash', () => {
+    const viaBash = evaluate(bash('ls ~/.ssh', plain));
+    const viaDeclared = evaluate(unknown('ops_bash', { command: 'ls ~/.ssh' }));
+    expect(verdict(viaDeclared)).toBe(verdict(viaBash));
+    expect(viaDeclared.stage).toBe(viaBash.stage);
+  });
+
+  test('a cwd argument in the home directory is the working directory analyzed', () => {
+    expect(
+      verdict(evaluate(unknown('ops_run_background', { command: 'rm -rf build', cwd: home }))),
+    ).toBe('rm.recursive-force-home-cwd');
+  });
+
+  test('two working directory arguments that disagree are denied', () => {
+    expect(
+      verdict(evaluate(unknown('ops_bash', { command: 'echo hi', workdir: plain, cwd: project }))),
+    ).toBe('analysis.failed-closed');
+  });
+
+  test('a blank or non-string working directory argument is denied', () => {
+    expect(verdict(evaluate(unknown('ops_bash', { command: 'echo hi', workdir: '' })))).toBe(
+      'analysis.failed-closed',
+    );
+    expect(verdict(evaluate(unknown('ops_bash', { command: 'echo hi', cwd: 7 })))).toBe(
+      'analysis.failed-closed',
+    );
+  });
+
+  test('a working directory that does not exist is denied as unusable', () => {
+    const evaluation = evaluate(unknown('ops_bash', { command: 'echo hi', workdir: 'missing' }));
+    expect(verdict(evaluation)).toBe('cwd.requested-unusable');
+    expect(evaluation.decision.kind === 'deny' ? evaluation.decision.reason : '').toBe(
+      createCwdDenial({ directory: 'requested', problem: 'unusable', cwd: 'missing' }).reason,
+    );
+  });
+
+  test('a declared cwd argument name is the only key read', () => {
+    expect(
+      verdict(
+        evaluate(unknown('ops_explicit', { command: 'rm -rf build', dir: home, workdir: project })),
+      ),
+    ).toBe('rm.recursive-force-home-cwd');
+  });
+
+  test('a declaration named like a built-in shell tool changes nothing', () => {
+    const call = invocation(
+      'Bash',
+      { command: 'rm -rf build', dir: home },
+      { kind: 'command', shell: 'posix' },
+      plain,
+      'rm -rf build',
+    );
+    expect(verdict(evaluate(call))).toBe('allow');
+  });
+
+  test('the always-on protections still deny without config state', () => {
+    const degraded = policySnapshot({
+      commandTools: [{ name: 'ops_bash' }],
+      configFallbackReason: 'invalid policy config: fix the file named in the diagnostic.',
+    });
+    const evaluation = evaluate(
+      unknown('ops_bash', { command: 'echo x > .git/hooks/pre-commit', workdir: project }),
+      degraded,
+    );
+    expect(evaluation).toStrictEqual({
+      stage: 'policy-protection',
+      decision: expect.objectContaining({ ruleId: 'guard.git-metadata' }),
+      promotedInvocation: expect.objectContaining({
+        context: { configCwd: plain, executionCwd: realpathSync(project) },
+      }),
+    });
   });
 });

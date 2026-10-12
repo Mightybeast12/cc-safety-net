@@ -1,6 +1,8 @@
 import type { AuditFailureStage } from '@/core/audit';
 import { type AnalysisErrorCode, AnalysisLimit, createBudget } from '@/core/budget';
 import type { Decision } from '@/core/decision';
+import { createCwdDenial } from '@/core/denial';
+import type { PathResolver } from '@/core/environment';
 import type { ProtectedGitMetadata } from '@/core/git/metadata';
 import { getCCSafetyNetEnvModes } from '@/core/policy/env';
 import { loadPolicySnapshot, type PolicySnapshotOptions } from '@/core/policy/snapshot';
@@ -34,7 +36,8 @@ import {
   getCommandSyntaxFact,
   StructuralShellSyntaxLimitError,
 } from '@/gate/guards/semantic-facts';
-import type { ToolInvocation } from '@/gate/invocation';
+import { resolveCanonicalCwd } from '@/gate/intake';
+import { createToolInvocation, type ToolInvocation } from '@/gate/invocation';
 import {
   findSensitiveTargetInSemanticFacts,
   REASON_SECRET_PROTECTION,
@@ -46,6 +49,8 @@ export type GuardStage = AuditFailureStage;
 export type GuardEvaluation = {
   stage: GuardStage;
   decision: Decision;
+
+  promotedInvocation?: ToolInvocation;
 
   level?: EffectiveSafetyLevel;
 
@@ -101,10 +106,38 @@ const DEFAULT_DEPENDENCIES: GuardDependencies = {
 };
 
 const BARE_SHELL_READING_STDIN = /^(?:\S*\/)?(?:ba|da|z|k)?sh(?:\s+-[A-Za-z-]*)*$/;
+const WORKING_DIRECTORY_ARGUMENTS = ['workdir', 'cwd', 'working_directory'];
 
-export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions): GuardEvaluation {
+export function evaluateGuard(
+  hostInvocation: ToolInvocation,
+  options: GuardOptions,
+): GuardEvaluation {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  const inputCommand = getInputCommandOrFail(invocation);
+  const inputCommand = getInputCommandOrFail(hostInvocation);
+  const loadSnapshot = () =>
+    callDependency('config-load', inputCommand, () =>
+      dependencies.loadPolicySnapshot(options.environment, {
+        ...options.policyOptions,
+        cwd: hostInvocation.context.configCwd,
+      }),
+    );
+  const declarationSnapshot =
+    hostInvocation.route.kind === 'unknown' && inputCommand ? loadSnapshot() : undefined;
+  const declaration = declarationSnapshot?.policy.commandTools.find(
+    (tool) => tool.name === hostInvocation.toolName,
+  );
+  const promotion =
+    declaration && inputCommand
+      ? promoteDeclaredCommandTool(
+          hostInvocation,
+          inputCommand,
+          declaration.cwd,
+          options.environment.paths,
+        )
+      : hostInvocation;
+  if ('decision' in promotion) return promotion;
+  const invocation = promotion;
+  const promoted = invocation === hostInvocation ? {} : { promotedInvocation: invocation };
   const command = isCommandInvocation(invocation) ? invocation.command : inputCommand;
 
   const facts = callDependency('policy-protection', command, () => createSemanticFacts(invocation));
@@ -117,6 +150,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   ) {
     return {
       stage: 'command-analysis',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_RECURSION_LIMIT,
@@ -129,6 +163,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
   if (inputCandidate?.program.status === 'limited') {
     return {
       stage: 'command-validation',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_STRUCTURAL_COMMAND_VALIDATION_LIMIT,
@@ -152,6 +187,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     const displayCommand = command ?? policyTarget.target;
     return {
       stage: 'policy-protection',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_POLICY_CONFIG_PROTECTION,
@@ -169,6 +205,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     const displayCommand = command ?? policyApplyTarget.target;
     return {
       stage: 'policy-protection',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_POLICY_APPLY_PROTECTION,
@@ -186,6 +223,7 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     const displayCommand = command ?? gitMetadataTarget.target;
     return {
       stage: 'policy-protection',
+      ...promoted,
       decision: {
         kind: 'deny',
         reason: REASON_GIT_METADATA_PROTECTION,
@@ -196,16 +234,15 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     };
   }
 
-  const snapshot = callDependency('config-load', command, () =>
-    dependencies.loadPolicySnapshot(options.environment, {
-      ...options.policyOptions,
-      cwd: invocation.context.configCwd,
-    }),
-  );
+  const snapshot = declarationSnapshot ?? loadSnapshot();
   const policy = snapshot.policy;
   const modes = dependencies.getModes(policy, options.environment.env);
 
-  const reported = { level: modes.effectiveLevel, ...getConfigFallback(snapshot) };
+  const reported = {
+    level: modes.effectiveLevel,
+    ...getConfigFallback(snapshot),
+    ...promoted,
+  };
   const secretTarget =
     policy.secretProtection.enabled === false
       ? null
@@ -293,6 +330,57 @@ export function evaluateGuard(invocation: ToolInvocation, options: GuardOptions)
     };
   }
   return { stage: 'command-analysis', ...reported, decision: { kind: 'allow' } };
+}
+
+function promoteDeclaredCommandTool(
+  invocation: ToolInvocation,
+  command: string,
+  cwdArgument: string | undefined,
+  paths: PathResolver,
+): ToolInvocation | GuardEvaluation {
+  const requestedCwds = [
+    ...new Set(
+      (cwdArgument ? [cwdArgument] : WORKING_DIRECTORY_ARGUMENTS).flatMap((key) => {
+        const descriptor = Object.getOwnPropertyDescriptor(invocation.input, key);
+        return descriptor ? [descriptor.value] : [];
+      }),
+    ),
+  ];
+  const usableCwds = requestedCwds.filter(
+    (value): value is string => typeof value === 'string' && value.trim() !== '',
+  );
+  if (requestedCwds.length > 1 || usableCwds.length !== requestedCwds.length) {
+    return failedClosedEvaluation('command-validation', command);
+  }
+  const requestedCwd = usableCwds[0];
+  const executionCwd =
+    requestedCwd === undefined
+      ? invocation.context.configCwd
+      : resolveCanonicalCwd(requestedCwd, invocation.context.configCwd, paths);
+  if (!executionCwd) {
+    const denial = createCwdDenial({
+      directory: 'requested',
+      problem: 'unusable',
+      cwd: requestedCwd ?? '',
+    });
+    return {
+      stage: 'command-validation',
+      decision: {
+        kind: 'deny',
+        reason: denial.reason,
+        ruleId: denial.ruleId,
+        intent: denial.intent,
+        evidence: { command, segment: command },
+      },
+    };
+  }
+  return createToolInvocation(
+    invocation.toolName,
+    invocation.input,
+    { kind: 'command', shell: 'auto' },
+    { configCwd: invocation.context.configCwd, executionCwd },
+    command,
+  );
 }
 
 function resolveGitMetadataForCwds(

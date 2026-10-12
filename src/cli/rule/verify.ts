@@ -18,9 +18,11 @@ import {
 } from '@/core/policy/config-file';
 import { getPolicyPaths } from '@/core/policy/paths';
 import { assertValidRulebook } from '@/core/policy/rulebook';
+import { readRulesConfig } from '@/core/policy/rules-config';
 import { getRulesConfigRuntimeErrorsForConfig } from '@/core/policy/scope-policy';
 import { NAME_PATTERN, RULES_DIR } from '@/core/policy/source-syntax';
 import { evaluateRulebookFixtures } from '@/gate/rulebook-fixtures';
+import { getBuiltInToolRefusal } from '@/hosts/built-in-tools';
 
 const VERIFY_HEADER = 'CC Safety Net Config';
 const VERIFY_SEPARATOR = '═'.repeat(VERIFY_HEADER.length);
@@ -79,6 +81,7 @@ function runRulesVerifyInternal(environment: Environment, options: RulesVerifyOp
     const result = validateRulesConfigFile(paths.userConfigTarget);
     result.errors.push(
       ...getRulesConfigRuntimeErrorsForConfig(paths.userConfigPath, paths.userScope),
+      ...getBuiltInCommandToolErrors(paths.userConfigTarget),
     );
     configsChecked.push({
       scope: 'User',
@@ -115,6 +118,7 @@ function runRulesVerifyInternal(environment: Environment, options: RulesVerifyOp
     const result = validateRulesConfigFile(paths.projectConfigTarget);
     result.errors.push(
       ...getRulesConfigRuntimeErrorsForConfig(paths.projectConfigPath, paths.projectScope),
+      ...getBuiltInCommandToolErrors(paths.projectConfigTarget),
     );
     configsChecked.push({
       scope: 'Project',
@@ -185,6 +189,12 @@ function runRulesVerifyInternal(environment: Environment, options: RulesVerifyOp
 
   console.log(hasWarnings ? '\nConfigs valid with warnings.' : '\nAll configs valid.');
   return 0;
+}
+
+function getBuiltInCommandToolErrors(target: PolicyFilesystemTarget): string[] {
+  return (readRulesConfig(target).config?.command_tools ?? []).flatMap(
+    (tool) => getBuiltInToolRefusal(typeof tool === 'string' ? tool : tool.name) ?? [],
+  );
 }
 
 function getLegacyRulesConfigWarning(

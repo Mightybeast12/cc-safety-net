@@ -1271,8 +1271,8 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
       secretIn(command, STANDARD);
       return performance.now() - started;
     };
-    elapsed(1);
-    expect(elapsed(4) / elapsed(2)).toBeLessThan(3);
+    const fastest = (scale: number) => Math.min(elapsed(scale), elapsed(scale));
+    expect(fastest(4) / fastest(1)).toBeLessThan(8);
   });
 
   test('inline code is decided without Map.groupBy, which Node 18 and 20 lack', () => {

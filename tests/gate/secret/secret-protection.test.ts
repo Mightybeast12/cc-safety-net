@@ -1239,6 +1239,11 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         expected: creds('credentials'),
       },
       {
+        name: 'a print argument stays a candidate where print is defined after wide spacing',
+        command: `python3 -c "def${' '.repeat(12)}print(p): return open(p).read()\nprint('credentials')"`,
+        expected: creds('credentials'),
+      },
+      {
         name: 'a console.log argument stays a candidate where console is rebound',
         command:
           "node -e \"const console = { log: require('fs').readFileSync }; console.log('.env')\"",

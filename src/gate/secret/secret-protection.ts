@@ -1617,16 +1617,14 @@ function holdsUnreadableLiteralRoles(masked: string, commentOpener: string): boo
 }
 
 function rebindsDisplayCall(masked: string, identifiers: readonly Identifier[]): boolean {
-  return identifiers.some((identifier) => {
-    const call = DISPLAY_CALL_SHAPE.get(identifier.name);
-    if (call === undefined) return false;
-    const end = identifier.index + identifier.name.length;
-    return (
-      DISPLAY_NAME_BINDING.test(
-        masked.slice(Math.max(0, identifier.index - 10), identifier.index),
-      ) || !call.test(masked.slice(end, end + 40))
-    );
-  });
+  return (
+    DISPLAY_NAME_BINDING.test(masked) ||
+    identifiers.some((identifier) => {
+      const call = DISPLAY_CALL_SHAPE.get(identifier.name);
+      const end = identifier.index + identifier.name.length;
+      return call !== undefined && !call.test(masked.slice(end, end + 40));
+    })
+  );
 }
 
 function namesCommandExecution(identifiers: readonly Identifier[]): boolean {
@@ -1727,7 +1725,8 @@ const DISPLAY_CALL_SHAPE = new Map([
   ['print', /^\s*\(/],
   ['console', /^\s*\.\s*[\w$]+\s*\(/],
 ]);
-const DISPLAY_NAME_BINDING = /(?:as|class|const|def|function|import|let|var)\s+$/;
+const DISPLAY_NAME_BINDING =
+  /(?:^|[^\w$])(?:as|class|const|def|function|import|let|var)\s+(?:print|console)(?![\w$])/;
 const STATEMENT_ASSIGNMENT_TARGET = /[;\n{]\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=\s*$/;
 const PATH_CONSTRUCTOR_CALL = /(?:^|[^\w$.])(?:pathlib\s*\.\s*)?Path\s*$/;
 const PATH_WRITE_METHOD = /^\s*\.\s*write_(?:text|bytes)\s*\(/;

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
@@ -180,6 +180,7 @@ function checkCarriers(cases: readonly CarrierCase[]): void {
 
 const env = (target: string): Verdict => ({ target, ruleId: 'secret.basename.env' });
 const ssh = (target: string): Verdict => ({ target, ruleId: 'secret.home.ssh' });
+const creds = (target: string): Verdict => ({ target, ruleId: 'secret.basename.credentials' });
 const aws = (target: string): Verdict => ({ target, ruleId: 'secret.home.aws' });
 const python = (...lines: string[]) => `python3 - <<'EOF'\n${lines.join('\n')}\nEOF`;
 
@@ -1188,9 +1189,69 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         relaxedInStandard: true,
       },
       {
-        name: 'an assigned literal beside a read of another file stays a candidate',
+        name: 'an assigned literal only printed beside a read of another file is data in standard mode',
         command:
           'node -e \'const path = ".env"; console.log(path); require("fs").readFileSync("README.md")\'',
+        expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a python assigned literal only printed beside a read of another file is data in standard mode',
+        command:
+          "python -c \"from pathlib import Path; note = 'credentials'; print(note); Path('report.md').read_text()\"",
+        expected: creds('credentials'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a literal printed beside a read of another file is data in standard mode',
+        command: "python3 -c \"print('credentials'); Path('report.md').read_text()\"",
+        expected: creds('credentials'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'an assigned literal whose name is opened stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; open(p).read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'an assigned literal whose name is aliased and opened stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; q = p; open(q).read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'an assigned literal opened inside a print call stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; print(open(p).read())"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'a print argument stays a candidate where print is rebound',
+        command: 'python3 -c "print = open; print(\'credentials\').read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'an assigned literal passed to a rebound print stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; print = open; print(p).read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'a print argument stays a candidate where print is defined',
+        command: 'python3 -c "def print(p): return open(p).read()\nprint(\'credentials\')"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'a print argument stays a candidate where print is defined after wide spacing',
+        command: `python3 -c "def${' '.repeat(12)}print(p): return open(p).read()\nprint('credentials')"`,
+        expected: creds('credentials'),
+      },
+      {
+        name: 'a console.log argument stays a candidate where console is rebound',
+        command:
+          "node -e \"const console = { log: require('fs').readFileSync }; console.log('.env')\"",
+        expected: env('.env'),
+      },
+      {
+        name: 'a console.log argument stays a candidate where console.log is reassigned',
+        command: "node -e \"console.log = require('fs').readFileSync; console.log('.env')\"",
         expected: env('.env'),
       },
       {
@@ -1200,6 +1261,37 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         relaxedInStandard: true,
       },
     ]);
+  });
+
+  test('assignments to a name printed many times cost no more than the same comparisons', () => {
+    const fastest = (operator: string) => {
+      const command = python(
+        'import pathlib',
+        `print(${Array.from({ length: 15000 }, () => 'v').join(',')})`,
+        ...Array.from({ length: 3000 }, (_, index) => `v ${operator} 'x${index}'`),
+        "w = '.env'",
+        "pathlib.Path('README.md').read_text()",
+      );
+      const elapsed = () => {
+        const started = performance.now();
+        secretIn(command, STANDARD);
+        return performance.now() - started;
+      };
+      return Math.min(elapsed(), elapsed());
+    };
+    expect(fastest('=') / fastest('==')).toBeLessThan(3);
+  });
+
+  test('inline code is decided without Map.groupBy, which Node 18 and 20 lack', () => {
+    const groupBy = spyOn(Map, 'groupBy').mockImplementation(() => {
+      throw new TypeError('Map.groupBy is not a function');
+    });
+    const ruleIds: unknown[] = [];
+    expect(() =>
+      ruleIds.push(secretIn('python3 -c "p = \'credentials\'; open(p).read()"', STANDARD)?.ruleId),
+    ).not.toThrow();
+    groupBy.mockRestore();
+    expect(ruleIds).toEqual(['secret.basename.credentials']);
   });
 
   test('an exec or eval marker keeps the literals it can receive', () => {
@@ -3134,8 +3226,6 @@ describe('a jq program is a filter, not a file operand', () => {
 });
 
 describe('a gh or git text flag value is text, not a file operand', () => {
-  const creds = (target: string): Verdict => ({ target, ruleId: 'secret.basename.credentials' });
-
   test('a search, title, body, jq or message value that is a secret basename is allowed', () => {
     checkCarriers([
       {
@@ -3401,6 +3491,24 @@ describe('secret protection through tool inputs', () => {
     ];
     for (const row of cases) {
       expect(routeVerdict({ command: row.command }, powershell), row.name).toStrictEqual(
+        row.expected,
+      );
+    }
+  });
+
+  test('a ForEach-Object or Where-Object script block is auto-detected as PowerShell', () => {
+    const auto: ToolRoute = { kind: 'command', shell: 'auto' };
+    const key = (target: string): Verdict => ({ target, ruleId: 'secret.ext-pattern.key' });
+    const cases: readonly { command: string; expected: Verdict }[] = [
+      { command: '$records | ForEach-Object { $_.key }', expected: null },
+      { command: "$records | Where-Object { $_.key -eq 'a' }", expected: null },
+      {
+        command: '$records | ForEach-Object { Get-Content server.key }',
+        expected: key('server.key'),
+      },
+    ];
+    for (const row of cases) {
+      expect(toolSecret({ command: row.command }, auto, null, STANDARD), row.command).toStrictEqual(
         row.expected,
       );
     }

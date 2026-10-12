@@ -437,6 +437,9 @@ describe('core/shell/parse', () => {
       ['cat $env:TEMP\\x', 'powershell'],
       ["python3 - <<'PY'\nRemove-Item x -Recurse -Force\nPY", 'posix'],
       ["Remove-Item '<<' x", 'powershell'],
+      ['$records | ForEach-Object { $_.key }', 'powershell'],
+      ["$records | Where-Object { $_.key -eq 'a' }", 'powershell'],
+      ['git commit -m "use ForEach-Object { $_.key }"', 'posix'],
       ['', 'posix'],
     ] as const;
     for (const [source, dialect] of rows) {

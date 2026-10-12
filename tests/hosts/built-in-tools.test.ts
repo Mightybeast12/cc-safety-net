@@ -14,6 +14,7 @@ describe('built-in shell tools', () => {
     ['powershell', 'GitHub Copilot CLI'],
     ['Shell', 'Cursor'],
     ['exec', 'Devin CLI'],
+    ['write_to_process', 'Devin CLI'],
     ['Execute', 'Factory Droid'],
     ['run_shell_command', 'Gemini CLI'],
     ['run_terminal_command', 'Grok Build'],

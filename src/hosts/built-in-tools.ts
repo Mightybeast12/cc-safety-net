@@ -6,7 +6,7 @@ import { CODEX_COMMAND_TOOLS } from '@/hosts/codex/hook';
 import { COPILOT_CLI_COMMAND_TOOLS } from '@/hosts/copilot-cli/hook';
 import { CURSOR_COMMAND_TOOLS } from '@/hosts/cursor/hook';
 import { DEEPSEEK_HARNESS_COMMAND_TOOLS } from '@/hosts/deepseek-harness/guard';
-import { DEVIN_COMMAND_TOOLS } from '@/hosts/devin/hook';
+import { DEVIN_COMMAND_TOOLS, DEVIN_PROCESS_INPUT_TOOL } from '@/hosts/devin/hook';
 import { DROID_COMMAND_TOOLS } from '@/hosts/droid/hook';
 import { GEMINI_CLI_COMMAND_TOOLS } from '@/hosts/gemini-cli/hook';
 import { GROK_BUILD_COMMAND_TOOLS } from '@/hosts/grok-build/hook';
@@ -24,7 +24,7 @@ const BUILT_IN_SHELL_TOOLS = (
     ['copilot-cli', [...COPILOT_CLI_COMMAND_TOOLS.keys()]],
     ['cursor', [...CURSOR_COMMAND_TOOLS.keys()]],
     ['deepseek-harness', [...DEEPSEEK_HARNESS_COMMAND_TOOLS.keys()]],
-    ['devin', [...DEVIN_COMMAND_TOOLS.keys()]],
+    ['devin', [...DEVIN_COMMAND_TOOLS.keys(), DEVIN_PROCESS_INPUT_TOOL]],
     ['droid', [...DROID_COMMAND_TOOLS.keys()]],
     ['gemini-cli', [...GEMINI_CLI_COMMAND_TOOLS.keys()]],
     ['grok-build', [...GROK_BUILD_COMMAND_TOOLS.keys()]],

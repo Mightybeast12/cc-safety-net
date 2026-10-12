@@ -11,9 +11,14 @@ type DevinHookInput = {
 };
 
 export const DEVIN_COMMAND_TOOLS = new Map<string, CommandToolKind>([['exec', 'auto']]);
+export const DEVIN_PROCESS_INPUT_TOOL = 'write_to_process';
 
 function textTypedIntoProcess(toolName: string, toolInput: unknown): string | undefined {
-  if (toolName !== 'write_to_process' || typeof toolInput !== 'object' || toolInput === null) {
+  if (
+    toolName !== DEVIN_PROCESS_INPUT_TOOL ||
+    typeof toolInput !== 'object' ||
+    toolInput === null
+  ) {
     return undefined;
   }
   const text = (toolInput as Record<string, unknown>).text_input;

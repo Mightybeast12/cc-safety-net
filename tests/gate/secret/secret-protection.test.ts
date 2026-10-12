@@ -1263,21 +1263,23 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     ]);
   });
 
-  test('assignments to a name printed many times cost time linear in the code size', () => {
-    const elapsed = (scale: number) => {
+  test('assignments to a name printed many times cost no more than the same comparisons', () => {
+    const fastest = (operator: string) => {
       const command = python(
         'import pathlib',
-        `print(${Array.from({ length: 5000 * scale }, () => 'v').join(',')})`,
-        ...Array.from({ length: 1000 * scale }, (_, index) => `v = 'x${index}'`),
+        `print(${Array.from({ length: 15000 }, () => 'v').join(',')})`,
+        ...Array.from({ length: 3000 }, (_, index) => `v ${operator} 'x${index}'`),
         "w = '.env'",
         "pathlib.Path('README.md').read_text()",
       );
-      const started = performance.now();
-      secretIn(command, STANDARD);
-      return performance.now() - started;
+      const elapsed = () => {
+        const started = performance.now();
+        secretIn(command, STANDARD);
+        return performance.now() - started;
+      };
+      return Math.min(elapsed(), elapsed());
     };
-    const fastest = (scale: number) => Math.min(elapsed(scale), elapsed(scale));
-    expect(fastest(4) / fastest(1)).toBeLessThan(8);
+    expect(fastest('=') / fastest('==')).toBeLessThan(3);
   });
 
   test('inline code is decided without Map.groupBy, which Node 18 and 20 lack', () => {

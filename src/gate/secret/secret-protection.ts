@@ -1516,8 +1516,8 @@ function extractInlineCodePathTargets(
       }))
     : [];
   const sequencesMayHoldArguments = namesCommandExecution(identifiers);
-  const nonDataUses = Map.groupBy(
-    identifiers.filter(
+  const nonDataUses = identifiers
+    .filter(
       (identifier) =>
         !inDataPosition(
           masked.masked,
@@ -1530,9 +1530,12 @@ function extractInlineCodePathTargets(
           openers,
           sequencesMayHoldArguments,
         ),
-    ),
-    (identifier) => identifier.name,
-  );
+    )
+    .reduce((uses, identifier) => {
+      const indices = uses.get(identifier.name) ?? [];
+      indices.push(identifier.index);
+      return uses.set(identifier.name, indices);
+    }, new Map<string, number[]>());
   return [
     ...literals
       .filter((literal) => literal.text !== '')
@@ -1684,7 +1687,7 @@ function assignedOnlyToData(
   masked: string,
   literal: CodeLiteral,
   openers: readonly number[],
-  nonDataUses: ReadonlyMap<string, readonly Identifier[]>,
+  nonDataUses: ReadonlyMap<string, readonly number[]>,
 ): boolean {
   const from = Math.max(0, literal.tokenStart - 80);
   const prefix = `${from === 0 ? '\n' : ''}${masked.slice(from, literal.tokenStart)}`;
@@ -1694,7 +1697,7 @@ function assignedOnlyToData(
   const statementEnd = nextNonWhitespaceIndex(masked, literal.tokenEnd) + 1;
   if (!/^\s*(?:[;\n]|$)/.test(masked.slice(literal.tokenEnd, statementEnd))) return false;
   const target = literal.tokenStart - prefix.length + prefix.lastIndexOf(name);
-  return (nonDataUses.get(name) ?? []).every((identifier) => identifier.index === target);
+  return (nonDataUses.get(name) ?? []).every((index) => index === target);
 }
 
 const DISPLAY_CALL = /(?:^|[^\w$.])(?:print|console\s*\.\s*log)\s*$/;

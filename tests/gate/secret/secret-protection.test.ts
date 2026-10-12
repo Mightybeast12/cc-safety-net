@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
@@ -1245,6 +1245,18 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     const started = performance.now();
     secretIn(command, STANDARD);
     expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  test('inline code is decided without Map.groupBy, which Node 18 and 20 lack', () => {
+    const groupBy = spyOn(Map, 'groupBy').mockImplementation(() => {
+      throw new TypeError('Map.groupBy is not a function');
+    });
+    const ruleIds: unknown[] = [];
+    expect(() =>
+      ruleIds.push(secretIn('python3 -c "p = \'credentials\'; open(p).read()"', STANDARD)?.ruleId),
+    ).not.toThrow();
+    groupBy.mockRestore();
+    expect(ruleIds).toEqual(['secret.basename.credentials']);
   });
 
   test('an exec or eval marker keeps the literals it can receive', () => {

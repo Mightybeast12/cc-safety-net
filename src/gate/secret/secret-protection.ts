@@ -232,6 +232,8 @@ type CodeLiteral = {
   readonly tokenEnd: number;
 };
 
+type Identifier = { readonly name: string; readonly index: number };
+
 type LiteralScan = { readonly masked: string[]; readonly literals: CodeLiteral[] };
 
 type MaskedCode =
@@ -1507,13 +1509,28 @@ function extractInlineCodePathTargets(
     literals.length > 0 &&
     !holdsUnreadableLiteralRoles(masked.masked, family === 'python' ? '#' : '//');
   const openers = literalRolesReadable ? innermostOpeners(masked.masked) : [];
-  const sequencesMayHoldArguments = literalRolesReadable && namesCommandExecution(masked.masked);
+  const identifiers = literalRolesReadable
+    ? Array.from(masked.masked.matchAll(/[A-Za-z_$][\w$]*/g), (match) => ({
+        name: match[0],
+        index: match.index,
+      }))
+    : [];
+  const sequencesMayHoldArguments = namesCommandExecution(identifiers);
   return [
     ...literals
       .filter((literal) => literal.text !== '')
       .map((literal) => {
         if (!literalRolesReadable || literalsWalkedAsShell.has(literal)) return here(literal.text);
-        if (inDataPosition(masked.masked, literal, openers, sequencesMayHoldArguments)) {
+        if (
+          inDataPosition(masked.masked, literal, openers, sequencesMayHoldArguments) ||
+          assignedOnlyToData(
+            masked.masked,
+            literal,
+            openers,
+            sequencesMayHoldArguments,
+            identifiers,
+          )
+        ) {
           return { ...here(literal.text), literalRole: 'data' as const };
         }
         return feedsOnlyWrite(masked, literal, openers)
@@ -1577,10 +1594,10 @@ function holdsUnreadableLiteralRoles(masked: string, commentOpener: string): boo
   );
 }
 
-function namesCommandExecution(masked: string): boolean {
-  return Array.from(masked.matchAll(/[A-Za-z_$][\w$]*/g), (match) =>
-    identifierParts(match[0]),
-  ).some((parts) => parts.some((part) => COMMAND_EXECUTION_IDENTIFIER_PART.test(part)));
+function namesCommandExecution(identifiers: readonly Identifier[]): boolean {
+  return identifiers.some((identifier) =>
+    identifierParts(identifier.name).some((part) => COMMAND_EXECUTION_IDENTIFIER_PART.test(part)),
+  );
 }
 
 const WINDOWS_SHELLS = new Set(['cmd', 'powershell', 'pwsh']);
@@ -1645,9 +1662,47 @@ function inDataPosition(
     (previous === bracket || previous === ',') &&
     (next === ',' || next === BRACKET_CLOSERS[bracket] || (bracket === '{' && next === ':'));
   if (bracket !== '(') return element && bracket !== '';
-  return element && (previous === ',' || next === ',') && isGroupingParenthesis(masked, opener);
+  return (
+    element &&
+    (DISPLAY_CALL.test(masked.slice(Math.max(0, opener - 20), opener)) ||
+      ((previous === ',' || next === ',') && isGroupingParenthesis(masked, opener)))
+  );
 }
 
+function assignedOnlyToData(
+  masked: string,
+  literal: CodeLiteral,
+  openers: readonly number[],
+  sequencesMayHoldArguments: boolean,
+  identifiers: readonly Identifier[],
+): boolean {
+  const from = Math.max(0, literal.tokenStart - 80);
+  const prefix = `${from === 0 ? '\n' : ''}${masked.slice(from, literal.tokenStart)}`;
+  const name = STATEMENT_ASSIGNMENT_TARGET.exec(prefix)?.[1];
+  const bracket = masked[openers[literal.tokenStart] ?? -1];
+  if (name === undefined || bracket === '(' || bracket === '[') return false;
+  const statementEnd = nextNonWhitespaceIndex(masked, literal.tokenEnd) + 1;
+  if (!/^\s*(?:[;\n]|$)/.test(masked.slice(literal.tokenEnd, statementEnd))) return false;
+  const target = literal.tokenStart - prefix.length + prefix.lastIndexOf(name);
+  return identifiers
+    .filter((identifier) => identifier.name === name && identifier.index !== target)
+    .every((identifier) =>
+      inDataPosition(
+        masked,
+        {
+          start: identifier.index,
+          text: name,
+          tokenStart: identifier.index,
+          tokenEnd: identifier.index + name.length,
+        },
+        openers,
+        sequencesMayHoldArguments,
+      ),
+    );
+}
+
+const DISPLAY_CALL = /(?:^|[^\w$.])(?:print|console\s*\.\s*log)\s*$/;
+const STATEMENT_ASSIGNMENT_TARGET = /[;\n{]\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=\s*$/;
 const PATH_CONSTRUCTOR_CALL = /(?:^|[^\w$.])(?:pathlib\s*\.\s*)?Path\s*$/;
 const PATH_WRITE_METHOD = /^\s*\.\s*write_(?:text|bytes)\s*\(/;
 const BARE_OPEN_CALL = /(?:^|[^\w$.])open\s*$/;

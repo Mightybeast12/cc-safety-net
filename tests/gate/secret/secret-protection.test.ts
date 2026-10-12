@@ -180,6 +180,7 @@ function checkCarriers(cases: readonly CarrierCase[]): void {
 
 const env = (target: string): Verdict => ({ target, ruleId: 'secret.basename.env' });
 const ssh = (target: string): Verdict => ({ target, ruleId: 'secret.home.ssh' });
+const creds = (target: string): Verdict => ({ target, ruleId: 'secret.basename.credentials' });
 const aws = (target: string): Verdict => ({ target, ruleId: 'secret.home.aws' });
 const python = (...lines: string[]) => `python3 - <<'EOF'\n${lines.join('\n')}\nEOF`;
 
@@ -1188,10 +1189,39 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
         relaxedInStandard: true,
       },
       {
-        name: 'an assigned literal beside a read of another file stays a candidate',
+        name: 'an assigned literal only printed beside a read of another file is data in standard mode',
         command:
           'node -e \'const path = ".env"; console.log(path); require("fs").readFileSync("README.md")\'',
         expected: env('.env'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a python assigned literal only printed beside a read of another file is data in standard mode',
+        command:
+          "python -c \"from pathlib import Path; note = 'credentials'; print(note); Path('report.md').read_text()\"",
+        expected: creds('credentials'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'a literal printed beside a read of another file is data in standard mode',
+        command: "python3 -c \"print('credentials'); Path('report.md').read_text()\"",
+        expected: creds('credentials'),
+        relaxedInStandard: true,
+      },
+      {
+        name: 'an assigned literal whose name is opened stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; open(p).read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'an assigned literal whose name is aliased and opened stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; q = p; open(q).read()"',
+        expected: creds('credentials'),
+      },
+      {
+        name: 'an assigned literal opened inside a print call stays a candidate',
+        command: 'python3 -c "p = \'credentials\'; print(open(p).read())"',
+        expected: creds('credentials'),
       },
       {
         name: 'a base64 literal the code only prints is inert data in standard mode',
@@ -3134,8 +3164,6 @@ describe('a jq program is a filter, not a file operand', () => {
 });
 
 describe('a gh or git text flag value is text, not a file operand', () => {
-  const creds = (target: string): Verdict => ({ target, ruleId: 'secret.basename.credentials' });
-
   test('a search, title, body, jq or message value that is a secret basename is allowed', () => {
     checkCarriers([
       {

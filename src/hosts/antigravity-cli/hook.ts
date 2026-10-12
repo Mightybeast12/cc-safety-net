@@ -44,7 +44,9 @@ interface AntigravityCliHookOutput {
   reason: string;
 }
 
-const ANTIGRAVITY_CLI_COMMAND_TOOLS = new Map<string, CommandToolKind>([['run_command', 'auto']]);
+export const ANTIGRAVITY_CLI_COMMAND_TOOLS = new Map<string, CommandToolKind>([
+  ['run_command', 'auto'],
+]);
 const ANTIGRAVITY_PATH_KEYS = new Set([
   'absolutepath',
   'directorypath',

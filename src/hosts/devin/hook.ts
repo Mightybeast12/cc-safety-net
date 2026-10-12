@@ -10,7 +10,7 @@ type DevinHookInput = {
   session_id?: unknown;
 };
 
-const DEVIN_COMMAND_TOOLS = new Map<string, CommandToolKind>([['exec', 'auto']]);
+export const DEVIN_COMMAND_TOOLS = new Map<string, CommandToolKind>([['exec', 'auto']]);
 
 function textTypedIntoProcess(toolName: string, toolInput: unknown): string | undefined {
   if (toolName !== 'write_to_process' || typeof toolInput !== 'object' || toolInput === null) {

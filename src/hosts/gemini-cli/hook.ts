@@ -22,7 +22,9 @@ interface GeminiHookOutput {
   systemMessage: string;
 }
 
-const GEMINI_CLI_COMMAND_TOOLS = new Map<string, CommandToolKind>([['run_shell_command', 'auto']]);
+export const GEMINI_CLI_COMMAND_TOOLS = new Map<string, CommandToolKind>([
+  ['run_shell_command', 'auto'],
+]);
 
 function getGeminiCliToolRoute(toolName: string) {
   return getToolRoute(toolName, GEMINI_CLI_COMMAND_TOOLS);

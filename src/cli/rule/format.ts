@@ -1,5 +1,6 @@
 import type {
   ActiveRulebookSummary,
+  CommandToolEntry,
   LoadedRulesPolicy,
   RuleOverride,
 } from '@/core/policy/rules-config';
@@ -103,6 +104,19 @@ export function printRulesListReport(policy: LoadedRulesPolicy): void {
   printListSection('Transparent wrappers', policy.transparent_wrappers, (wrapper) => [wrapper]);
   printListSection('Issues', policy.errors, (error) => [error]);
   printListSection('Warnings', policy.warnings, (warning) => [warning]);
+}
+
+export function printCommandToolsList(
+  tools: { scope: 'user' | 'project'; tool: CommandToolEntry }[],
+): void {
+  printListSection('Command tools', tools, (entry) =>
+    typeof entry.tool === 'string'
+      ? [`[${entry.scope}] ${entry.tool}`]
+      : [
+          `[${entry.scope}] ${entry.tool.name}`,
+          ...(entry.tool.cwd === undefined ? [] : [`  Cwd argument: ${entry.tool.cwd}`]),
+        ],
+  );
 }
 
 function printListSection<T>(title: string, items: T[], format: (item: T) => string[]): void {

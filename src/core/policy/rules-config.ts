@@ -148,9 +148,9 @@ export const RULES_CONFIG_FIELDS = [
   'transparent_wrappers',
   'command_tools',
 ];
-/** @internal */
 export const COMMAND_TOOL_NAME_PATTERN = /^[^\s\p{Cc}]{1,256}$/u;
-const NAME_RULE = 'non-empty, at most 256 characters, no whitespace or control characters';
+export const COMMAND_TOOL_NAME_RULE =
+  'non-empty, at most 256 characters, no whitespace or control characters';
 
 export function getRulesConfigValidation(config: unknown): {
   errors: string[];
@@ -330,7 +330,7 @@ function commandToolIssues(tools: unknown): Issue[] {
     if (typeof tool === 'string') {
       return isCommandToolName(tool)
         ? firstClaim(tool, index)
-        : [typed(['command_tools', index], `must be a tool name: ${NAME_RULE}`)];
+        : [typed(['command_tools', index], `must be a tool name: ${COMMAND_TOOL_NAME_RULE}`)];
     }
     if (!isRecord(tool)) {
       return [typed(['command_tools', index], 'must be a tool name or a {name, cwd} object')];
@@ -338,10 +338,20 @@ function commandToolIssues(tools: unknown): Issue[] {
     const issues = [
       ...(isCommandToolName(tool.name)
         ? []
-        : [typed(['command_tools', index, 'name'], `must be a tool name: ${NAME_RULE}`)]),
+        : [
+            typed(
+              ['command_tools', index, 'name'],
+              `must be a tool name: ${COMMAND_TOOL_NAME_RULE}`,
+            ),
+          ]),
       ...(tool.cwd === undefined || isCommandToolName(tool.cwd)
         ? []
-        : [typed(['command_tools', index, 'cwd'], `must be an argument name: ${NAME_RULE}`)]),
+        : [
+            typed(
+              ['command_tools', index, 'cwd'],
+              `must be an argument name: ${COMMAND_TOOL_NAME_RULE}`,
+            ),
+          ]),
     ];
     return issues.length > 0 ? issues : firstClaim(tool.name as string, index);
   });

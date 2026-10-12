@@ -138,6 +138,40 @@ describe('rule verify', () => {
     expect(configContent(outcome.tree, USER_RULES_CONFIG)).toContain(`{\n  "$schema": "https:`);
   });
 
+  test('a built-in tool declared by hand in either scope fails verification', () => {
+    const outcome = verifyBothWays({
+      [USER_RULES_CONFIG]: JSON.stringify({ version: 1, command_tools: ['bash', 'ops_bash'] }),
+      [PROJECT_RULES_CONFIG]: JSON.stringify({
+        version: 1,
+        command_tools: [{ name: 'Read', cwd: 'dir' }],
+      }),
+    });
+    expect(outcome.code).toBe(1);
+    expect(outcome.report).toContain(
+      [
+        `✗ User config: ${posix.join('<root>', 'home', '.cc-safety-net', 'rules', 'rule.json')}`,
+        '  Errors:',
+        '    1. "bash" is a built-in shell tool of Claude Code, Codex, DeepSeek Harness, GitHub Copilot CLI, Kimi Code, OpenCode and Pi, and is already analyzed. Built-in tools cannot be declared.',
+      ].join('\n'),
+    );
+    expect(outcome.report).toContain(
+      [
+        `✗ Project config: ${posix.join('<root>', 'project', '.cc-safety-net', 'rules', 'rule.json')}`,
+        '  Errors:',
+        '    1. "Read" is a built-in file tool, and is already analyzed. Built-in tools cannot be declared.',
+      ].join('\n'),
+    );
+    expect(outcome.report).toContain('\nConfig validation failed.');
+  });
+
+  test('a declared community tool passes verification', () => {
+    const outcome = verifyBothWays({
+      [USER_RULES_CONFIG]: JSON.stringify({ version: 1, command_tools: ['ops_bash'] }),
+    });
+    expect(outcome.code).toBe(0);
+    expect(outcome.report).toContain('\nAll configs valid.');
+  });
+
   test('an unparseable user config is reported as invalid', () => {
     const outcome = verifyBothWays({ [USER_RULES_CONFIG]: 'not json' });
     expect(outcome.code).toBe(1);

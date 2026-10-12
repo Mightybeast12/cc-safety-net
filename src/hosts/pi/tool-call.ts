@@ -35,7 +35,7 @@ type PiToolCallEvent = {
   input?: Record<string, unknown>;
 };
 
-const PI_COMMAND_TOOL_ADAPTERS = new Map<string, CommandToolKind>([
+export const PI_COMMAND_TOOL_ADAPTERS = new Map<string, CommandToolKind>([
   ['bash', 'posix'],
   ['powershell', 'powershell'],
 ]);

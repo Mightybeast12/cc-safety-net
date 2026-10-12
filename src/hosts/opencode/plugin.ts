@@ -37,6 +37,10 @@ type CCSafetyNetPluginInput = PluginInput & {
 
 const POWERSHELL_EXECUTABLES = new Set(['powershell', 'pwsh']);
 
+export const OPENCODE_COMMAND_TOOL = 'bash';
+
+export const OPENCODE_V2_COMMAND_TOOL = 'shell';
+
 export function createCCSafetyNetPlugin(guardDependencies: Partial<GuardDependencies> = {}) {
   return (async ({ directory, homeDir }: CCSafetyNetPluginInput) => {
     const configCwd = resolve(directory);
@@ -190,7 +194,7 @@ export function resolveOpenCodeShellRoute(
 }
 
 function getOpenCodeToolRoute(toolName: string, shell: CommandToolKind): ToolRoute {
-  if (toolName === 'bash') return { kind: 'command', shell };
+  if (toolName === OPENCODE_COMMAND_TOOL) return { kind: 'command', shell };
   return { kind: getNonCommandToolInputKind(toolName) };
 }
 

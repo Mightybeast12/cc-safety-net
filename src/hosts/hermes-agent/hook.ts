@@ -14,7 +14,7 @@ interface HermesAgentHookInput {
   cwd?: string;
 }
 
-const HERMES_AGENT_COMMAND_TOOLS = new Map<string, CommandToolKind>([['terminal', 'posix']]);
+export const HERMES_AGENT_COMMAND_TOOLS = new Map<string, CommandToolKind>([['terminal', 'posix']]);
 
 export async function runHermesAgentHook(): Promise<void> {
   await runConfiguredHookAdapter<HermesAgentHookInput>({

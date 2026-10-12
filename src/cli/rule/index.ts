@@ -3,11 +3,17 @@ import { parseCommandArgs } from '@/cli/args';
 import { ruleAddExamples, ruleAddOptions, ruleCommand } from '@/cli/commands/rule';
 import { printCommandHelp } from '@/cli/help';
 import { RULE_DOC } from '@/cli/rule/doc';
-import { printRuleAddResult, printRuleChangeResult, printRulesListReport } from '@/cli/rule/format';
+import {
+  printCommandToolsList,
+  printRuleAddResult,
+  printRuleChangeResult,
+  printRulesListReport,
+} from '@/cli/rule/format';
 import { runRulesMigrate } from '@/cli/rule/migrate';
 import { runRuleSyncMigration } from '@/cli/rule/sync-migrate';
 import { getUpdateNotice } from '@/cli/rule/update-notice';
 import { runRulesVerify } from '@/cli/rule/verify';
+import { colors } from '@/cli/utils/colors';
 import type { Environment } from '@/core/environment';
 import {
   getPolicyFilesystemTargetForPath,
@@ -17,21 +23,33 @@ import {
 } from '@/core/io/safe-read';
 import { writeJsonAtomic } from '@/core/policy/config-file';
 import { getProjectRulesConfigPath, projectPolicyIsUserPolicy } from '@/core/policy/paths';
-import { readRulesConfig } from '@/core/policy/rules-config';
+import {
+  COMMAND_TOOL_NAME_PATTERN,
+  COMMAND_TOOL_NAME_RULE,
+  type CommandToolEntry,
+  readRulesConfig,
+} from '@/core/policy/rules-config';
 import { getRulesConfigRuntimeErrorsForConfig, loadRulesPolicy } from '@/core/policy/scope-policy';
 import { isGitHubRef, isGitHubRepositorySource, NAME_PATTERN } from '@/core/policy/source-syntax';
 import { isReservedTransparentWrapper } from '@/core/policy/transparent-wrappers';
 import { COMMAND_PATTERN } from '@/core/rules/constants';
-import { writeDefaultRulesConfig, writeStarterRulebook } from '@/rules-manager/config-file';
+import { getBuiltInToolRefusal } from '@/hosts/built-in-tools';
+import {
+  readScopeRulesConfig,
+  writeDefaultRulesConfig,
+  writeStarterRulebook,
+} from '@/rules-manager/config-file';
 import { getScopePaths } from '@/rules-manager/paths';
 import { addRulebookSource, removeRulebookSource, syncRulesConfig } from '@/rules-manager/sync';
 
 interface RuleFlags {
   global: boolean;
+  project: boolean;
   cleanup: boolean;
   deleteSource: boolean;
   example: boolean;
   ref?: string;
+  cwdArg?: string;
   only: string[];
   help: boolean;
   positionals: string[];
@@ -46,12 +64,13 @@ const RULE_SUBCOMMANDS = new Set([
   'sync',
   'list',
   'wrapper',
+  'tool',
   'migrate',
   'doc',
   'verify',
 ]);
 const RULE_WRITE_SUBCOMMANDS = new Set(['init', 'add', 'remove', 'update', 'sync', 'wrapper']);
-const RULE_WRAPPER_ACTIONS = new Set(['add', 'remove', 'list']);
+const RULE_LIST_ACTIONS = new Set(['add', 'remove', 'list']);
 const OFFICIAL_RULEBOOKS_SOURCE = 'cc-safety-net/rulebooks';
 
 export async function runRuleCommand(
@@ -94,12 +113,14 @@ async function runRuleCommandInternal(
   const options = { global: flags.global };
   const cwd = process.cwd();
   const writesProjectRules =
-    !flags.global &&
-    RULE_WRITE_SUBCOMMANDS.has(subcommand) &&
-    !(subcommand === 'wrapper' && value === 'list');
+    subcommand === 'tool'
+      ? flags.project
+      : !flags.global &&
+        RULE_WRITE_SUBCOMMANDS.has(subcommand) &&
+        !(subcommand === 'wrapper' && value === 'list');
   if (writesProjectRules && projectPolicyIsUserPolicy(environment, { cwd })) {
     console.error(
-      `${getProjectRulesConfigPath(cwd)} is the user rule config, not a project rule config; use --global for the user scope, or run from a project directory`,
+      `${getProjectRulesConfigPath(cwd)} is the user rule config, not a project rule config; ${subcommand === 'tool' ? 'drop --project' : 'use --global'} for the user scope, or run from a project directory`,
     );
     return 1;
   }
@@ -174,6 +195,10 @@ async function runRuleCommandInternal(
     return runRuleWrapperCommand(environment, flags);
   }
 
+  if (subcommand === 'tool') {
+    return runRuleToolCommand(environment, flags, cwd);
+  }
+
   if (subcommand === 'migrate') {
     return runRulesMigrate(environment, { cleanup: flags.cleanup, cwd });
   }
@@ -228,11 +253,12 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
       label: 'rule',
       booleans: {
         global: ['-g', '--global'],
+        project: ['--project'],
         cleanup: ['--cleanup'],
         deleteSource: ['--delete-source'],
         example: ['--example'],
       },
-      values: { ref: ['--ref'] },
+      values: { ref: ['--ref'], cwdArg: ['--cwd-arg'] },
       lists: { only: ['--only'] },
       positionals: 'list',
     },
@@ -241,6 +267,7 @@ function parseRuleFlags(args: readonly string[]): RuleFlags {
   const flags: RuleFlags = {
     ...parsed.flags,
     ref: parsed.values.ref,
+    cwdArg: parsed.values.cwdArg,
     only: parsed.lists.only ?? [],
     help: parsed.help,
     positionals: parsed.positionals,
@@ -276,6 +303,18 @@ function validateRuleFlags(flags: RuleFlags): void {
   if (flags.only.length > 0 && subcommand !== 'add') {
     flags.errors.push(unknownRuleOption(subcommand, '--only'));
   }
+  const toolAction = subcommand === 'tool' ? flags.positionals[1] : undefined;
+  const optionOwner =
+    toolAction && RULE_LIST_ACTIONS.has(toolAction) ? `tool ${toolAction}` : subcommand;
+  if (flags.project && toolAction !== 'add' && toolAction !== 'remove') {
+    flags.errors.push(unknownRuleOption(optionOwner, '--project'));
+  }
+  if (flags.cwdArg !== undefined && toolAction !== 'add') {
+    flags.errors.push(unknownRuleOption(optionOwner, '--cwd-arg'));
+  }
+  if (subcommand === 'tool' && flags.global) {
+    flags.errors.push(unknownRuleOption(subcommand, '--global'));
+  }
   if (subcommand === 'add') validateRuleAddFlags(flags);
   if (subcommand === 'migrate') {
     if (flags.global) flags.errors.push(unknownRuleOption(subcommand, '--global'));
@@ -283,7 +322,9 @@ function validateRuleFlags(flags: RuleFlags): void {
       flags.errors.push(`Unexpected rule migrate argument: ${flags.positionals[1]}`);
     }
   } else if (subcommand === 'wrapper') {
-    validateRuleWrapperFlags(flags);
+    validateRuleListActionFlags(flags, 'a command');
+  } else if (subcommand === 'tool') {
+    validateRuleListActionFlags(flags, 'a tool name');
   } else if (flags.positionals.length > 2) {
     flags.errors.push(`Unexpected rule argument: ${flags.positionals[2]}`);
   }
@@ -325,27 +366,28 @@ function unknownRuleOption(subcommand: string | undefined, option: string) {
     : `Unknown option for rule: ${option}`;
 }
 
-function validateRuleWrapperFlags(flags: RuleFlags): void {
+function validateRuleListActionFlags(flags: RuleFlags, operand: string): void {
+  const subcommand = flags.positionals[0];
   const action = flags.positionals[1];
-  const command = flags.positionals[2];
+  const value = flags.positionals[2];
   if (!action) {
-    flags.errors.push('rule wrapper requires add, remove, or list');
+    flags.errors.push(`rule ${subcommand} requires add, remove, or list`);
     return;
   }
-  if (!RULE_WRAPPER_ACTIONS.has(action)) {
-    flags.errors.push(`Unknown rule wrapper action: ${action}`);
+  if (!RULE_LIST_ACTIONS.has(action)) {
+    flags.errors.push(`Unknown rule ${subcommand} action: ${action}`);
     return;
   }
   if (action === 'list') {
-    if (command) flags.errors.push(`Unexpected rule wrapper argument: ${command}`);
+    if (value) flags.errors.push(`Unexpected rule ${subcommand} argument: ${value}`);
     return;
   }
-  if (!command) {
-    flags.errors.push(`rule wrapper ${action} requires a command`);
+  if (!value) {
+    flags.errors.push(`rule ${subcommand} ${action} requires ${operand}`);
     return;
   }
   if (flags.positionals.length > 3) {
-    flags.errors.push(`Unexpected rule wrapper argument: ${flags.positionals[3]}`);
+    flags.errors.push(`Unexpected rule ${subcommand} argument: ${flags.positionals[3]}`);
   }
 }
 
@@ -417,4 +459,74 @@ function printTransparentWrappers(wrappers: string[]): void {
   }
   console.log(`Transparent wrappers (${wrappers.length}):`);
   for (const wrapper of wrappers) console.log(`  - ${wrapper}`);
+}
+
+function runRuleToolCommand(environment: Environment, flags: RuleFlags, cwd: string): number {
+  const action = flags.positionals[1];
+  const name = flags.positionals[2] ?? '';
+  if (action === 'list') return listCommandTools(environment, cwd);
+
+  if (!COMMAND_TOOL_NAME_PATTERN.test(name)) {
+    return refuseCommandTool(`"${name}" is not a tool name: ${COMMAND_TOOL_NAME_RULE}.`);
+  }
+  if (flags.cwdArg !== undefined && !COMMAND_TOOL_NAME_PATTERN.test(flags.cwdArg)) {
+    return refuseCommandTool(
+      `"${flags.cwdArg}" is not an argument name: ${COMMAND_TOOL_NAME_RULE}.`,
+    );
+  }
+  const builtInRefusal = action === 'add' ? getBuiltInToolRefusal(name) : undefined;
+  if (builtInRefusal) return refuseCommandTool(builtInRefusal);
+
+  const scope = getScopePaths(environment, { global: !flags.project });
+  const loaded = readScopeRulesConfig(scope.configTarget);
+  if (!loaded.ok) {
+    for (const error of loaded.result.errors) console.error(error);
+    return 1;
+  }
+  const tools = loaded.config.command_tools ?? [];
+  const entry = flags.cwdArg === undefined ? name : { name, cwd: flags.cwdArg };
+  const isNamed = (tool: CommandToolEntry) =>
+    (typeof tool === 'string' ? tool : tool.name) === name;
+  const nextTools =
+    action === 'remove'
+      ? tools.filter((tool) => !isNamed(tool))
+      : tools.some(isNamed)
+        ? tools.map((tool) => (isNamed(tool) ? entry : tool))
+        : [...tools, entry];
+
+  writeJsonAtomic(scope.configTarget, { ...loaded.config, command_tools: nextTools });
+  console.log(
+    action === 'add'
+      ? `Added command tool: ${name}${flags.cwdArg === undefined ? '' : ` (cwd argument: ${flags.cwdArg})`}`
+      : `Removed command tool: ${name}`,
+  );
+  console.log(`Scope: ${flags.project ? 'project' : 'user'} (${scope.configPath})`);
+  return 0;
+}
+
+function refuseCommandTool(message: string): number {
+  console.error(colors.red(`Error: ${message}`));
+  return 1;
+}
+
+function listCommandTools(environment: Environment, cwd: string): number {
+  const scopes = (
+    projectPolicyIsUserPolicy(environment, { cwd })
+      ? (['user'] as const)
+      : (['user', 'project'] as const)
+  ).map((scope) => {
+    const paths = getScopePaths(environment, { global: scope === 'user' });
+    return { scope, path: paths.configPath, ...readRulesConfig(paths.configTarget) };
+  });
+  const errors = scopes.flatMap((scope) => scope.errors.map((error) => `${scope.path}: ${error}`));
+  if (errors.length > 0) {
+    for (const error of errors) console.error(error);
+    return 1;
+  }
+  printCommandToolsList(
+    scopes.flatMap((scope) =>
+      (scope.config?.command_tools ?? []).map((tool) => ({ scope: scope.scope, tool })),
+    ),
+  );
+  return 0;
 }

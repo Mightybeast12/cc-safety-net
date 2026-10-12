@@ -3406,6 +3406,24 @@ describe('secret protection through tool inputs', () => {
     }
   });
 
+  test('a ForEach-Object or Where-Object script block is auto-detected as PowerShell', () => {
+    const auto: ToolRoute = { kind: 'command', shell: 'auto' };
+    const key = (target: string): Verdict => ({ target, ruleId: 'secret.ext-pattern.key' });
+    const cases: readonly { command: string; expected: Verdict }[] = [
+      { command: '$records | ForEach-Object { $_.key }', expected: null },
+      { command: "$records | Where-Object { $_.key -eq 'a' }", expected: null },
+      {
+        command: '$records | ForEach-Object { Get-Content server.key }',
+        expected: key('server.key'),
+      },
+    ];
+    for (const row of cases) {
+      expect(toolSecret({ command: row.command }, auto, null, STANDARD), row.command).toStrictEqual(
+        row.expected,
+      );
+    }
+  });
+
   test('a script handed to pwsh or powershell is read as PowerShell', () => {
     const cases: readonly { command: string; expected: Verdict }[] = [
       { command: "pwsh -c 'Get-Content ~/.ssh/config'", expected: ssh('~/.ssh/config') },

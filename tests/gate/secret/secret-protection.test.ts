@@ -1232,6 +1232,21 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     ]);
   });
 
+  test('thousands of assignments to a name printed thousands of times are decided without a per-assignment rescan', () => {
+    const uses = Array.from({ length: 15000 }, () => 'v').join(',');
+    const assignments = Array.from({ length: 3000 }, (_, index) => `v = 'x${index}'`);
+    const command = python(
+      'import pathlib',
+      `print(${uses})`,
+      ...assignments,
+      "w = '.env'",
+      "pathlib.Path('README.md').read_text()",
+    );
+    const started = performance.now();
+    secretIn(command, STANDARD);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   test('an exec or eval marker keeps the literals it can receive', () => {
     checkCarriers([
       {

@@ -1,4 +1,4 @@
-import{Y,P,it,u}from"../chunks/index-ggjhza7z.js";import{re}from"../chunks/index-5ht7pdm3.js";import{j,de,Se}from"../chunks/index-qqtz3762.js";import"../chunks/index-gmb01xhx.js";var m="cc-safety-net",C="Operate CC Safety Net: explain blocks, rules, integrations, diagnostics",p="Help me with CC Safety Net.";function s(o){o.registerCommand(m,{description:C,handler:async(n,t)=>{o.sendUserMessage(c(n),t.isIdle()?void 0:{deliverAs:"followUp"})}})}function c(o){return`${re.slice(re.indexOf("# CC Safety Net")).trimEnd()}
+import{Y,P,it,u}from"../chunks/index-qqeavprx.js";import{re}from"../chunks/index-5ht7pdm3.js";import{j,de,Se}from"../chunks/index-8xhv2rxq.js";import"../chunks/index-98d7wdvf.js";var m="cc-safety-net",C="Operate CC Safety Net: explain blocks, rules, integrations, diagnostics",p="Help me with CC Safety Net.";function s(o){o.registerCommand(m,{description:C,handler:async(n,t)=>{o.sendUserMessage(c(n),t.isIdle()?void 0:{deliverAs:"followUp"})}})}function c(o){return`${re.slice(re.indexOf("# CC Safety Net")).trimEnd()}
 
 ## User request
 

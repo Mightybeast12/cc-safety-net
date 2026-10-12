@@ -1516,6 +1516,23 @@ function extractInlineCodePathTargets(
       }))
     : [];
   const sequencesMayHoldArguments = namesCommandExecution(identifiers);
+  const nonDataUses = Map.groupBy(
+    identifiers.filter(
+      (identifier) =>
+        !inDataPosition(
+          masked.masked,
+          {
+            start: identifier.index,
+            text: identifier.name,
+            tokenStart: identifier.index,
+            tokenEnd: identifier.index + identifier.name.length,
+          },
+          openers,
+          sequencesMayHoldArguments,
+        ),
+    ),
+    (identifier) => identifier.name,
+  );
   return [
     ...literals
       .filter((literal) => literal.text !== '')
@@ -1523,13 +1540,7 @@ function extractInlineCodePathTargets(
         if (!literalRolesReadable || literalsWalkedAsShell.has(literal)) return here(literal.text);
         if (
           inDataPosition(masked.masked, literal, openers, sequencesMayHoldArguments) ||
-          assignedOnlyToData(
-            masked.masked,
-            literal,
-            openers,
-            sequencesMayHoldArguments,
-            identifiers,
-          )
+          assignedOnlyToData(masked.masked, literal, openers, nonDataUses)
         ) {
           return { ...here(literal.text), literalRole: 'data' as const };
         }
@@ -1673,8 +1684,7 @@ function assignedOnlyToData(
   masked: string,
   literal: CodeLiteral,
   openers: readonly number[],
-  sequencesMayHoldArguments: boolean,
-  identifiers: readonly Identifier[],
+  nonDataUses: ReadonlyMap<string, readonly Identifier[]>,
 ): boolean {
   const from = Math.max(0, literal.tokenStart - 80);
   const prefix = `${from === 0 ? '\n' : ''}${masked.slice(from, literal.tokenStart)}`;
@@ -1684,21 +1694,7 @@ function assignedOnlyToData(
   const statementEnd = nextNonWhitespaceIndex(masked, literal.tokenEnd) + 1;
   if (!/^\s*(?:[;\n]|$)/.test(masked.slice(literal.tokenEnd, statementEnd))) return false;
   const target = literal.tokenStart - prefix.length + prefix.lastIndexOf(name);
-  return identifiers
-    .filter((identifier) => identifier.name === name && identifier.index !== target)
-    .every((identifier) =>
-      inDataPosition(
-        masked,
-        {
-          start: identifier.index,
-          text: name,
-          tokenStart: identifier.index,
-          tokenEnd: identifier.index + name.length,
-        },
-        openers,
-        sequencesMayHoldArguments,
-      ),
-    );
+  return (nonDataUses.get(name) ?? []).every((identifier) => identifier.index === target);
 }
 
 const DISPLAY_CALL = /(?:^|[^\w$.])(?:print|console\s*\.\s*log)\s*$/;

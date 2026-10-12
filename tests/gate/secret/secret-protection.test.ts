@@ -146,6 +146,18 @@ function secretIn(command: string, mode: Mode, config?: SecretProtectionConfig):
   return toolSecret({ command }, { kind: 'command', shell: 'posix' }, command, mode, config);
 }
 
+function growthAtEightfoldSize(commandOfSize: (size: number) => string, size: number, mode: Mode) {
+  const fastest = (command: string) =>
+    Math.min(
+      ...[0, 1].map(() => {
+        const started = performance.now();
+        secretIn(command, mode);
+        return performance.now() - started;
+      }),
+    );
+  return fastest(commandOfSize(size)) / fastest(commandOfSize(size / 8));
+}
+
 function toolSecret(
   input: unknown,
   route: ToolRoute,
@@ -1932,13 +1944,11 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     }
   });
 
-  test('a heredoc body of thousands of calls is decided without a per-call blow-up', () => {
-    const calls = Array.from({ length: 2500 }, (_, index) => `subprocess.run("echo ${index}")`);
-    const command = `python3 <<'PY'\nimport subprocess\n${calls.join('\n')}\nPY`;
+  test('a heredoc body of eight times the calls costs under 24 times the time', () => {
+    const heredoc = (calls: number) =>
+      `python3 <<'PY'\nimport subprocess\n${Array.from({ length: calls }, (_, index) => `subprocess.run("echo ${index}")`).join('\n')}\nPY`;
     for (const mode of [STANDARD, STRICT]) {
-      const started = performance.now();
-      secretIn(command, mode);
-      expect(performance.now() - started).toBeLessThan(2000);
+      expect(growthAtEightfoldSize(heredoc, 2400, mode)).toBeLessThan(24);
     }
   });
 
@@ -2698,15 +2708,14 @@ bun test tests/gate/secret/secret-protection.test.ts 2>&1 | grep -E "expect\\(|p
     ]);
   });
 
-  test('loops over thousands of list words are decided without a per-word rescan', () => {
-    const words = (prefix: string) =>
-      Array.from({ length: 7000 }, (_, index) => `${prefix}${index}`);
-    const loops = `for a in .env ${words('a').join(' ')}; do :; done; for b in ${words('b').join(' ')}; do :; done`;
-    for (const command of [loops, `${loops} | sort`]) {
+  test('loops over eight times the list words cost under 24 times the time', () => {
+    const words = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => `${prefix}${index}`).join(' ');
+    for (const pipe of ['', ' | sort']) {
+      const loops = (count: number) =>
+        `for a in .env ${words('a', count)}; do :; done; for b in ${words('b', count)}; do :; done${pipe}`;
       for (const mode of [STANDARD, STRICT]) {
-        const started = performance.now();
-        secretIn(command, mode);
-        expect(performance.now() - started).toBeLessThan(1000);
+        expect(growthAtEightfoldSize(loops, 7000, mode)).toBeLessThan(24);
       }
     }
   });
